@@ -1,9 +1,12 @@
+![Application screenshot](demo/demo.png)
+![Application demo](demo/demo.gif)
+
 # Hall Analog Mapper
 
 A modular Windows tray application that converts Hall-effect keyboard travel
 into a virtual Xbox 360 controller.
 
-The first built-in adapter supports the EPOMAKER HE30 family. Additional brands
+The first built-in adapter supports the EPOMAKER HE30 keyboard. Additional brands
 can be added without changing the mapper service, controller output, tray, or
 user interface.
 
