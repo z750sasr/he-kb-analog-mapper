@@ -15,8 +15,8 @@ user interface.
   selection glow, mapped-key marker, and live Hall-travel fill.
 - Per-key mappings for both sticks, both analog triggers, face buttons, bumpers,
   D-pad directions, Start/Back, and stick clicks.
-- A responsive controller-action grid with all 25 supplied icons, a separately
-  supported Menu/Guide action, and a text-only Unassigned action.
+- A responsive 26-action controller grid: 25 supplied icons (including the
+  corrected Menu/Guide action) plus a text-only Unassigned action.
 - Optional global shortcuts to start/stop mapping or completely exit the app
   while its window is hidden.
 - Separate mapping sets for each keyboard adapter.
@@ -169,15 +169,16 @@ context-switch and power-management costs without lowering input latency.
 Tk 8.6 draws widgets and Canvas content through CPU/GDI rendering and has no
 hardware-acceleration switch. Windows still GPU-composites the finished window,
 but migrating the widget tree to WebView2 or Qt Quick would be a separate UI
-rewrite. The fixed layout and refresh batching remove the expensive rapid-scroll
-path without adding a large browser or Qt runtime.
+rewrite. The app opts into Windows DPI-aware rendering to avoid bitmap scaling;
+the fixed layout and refresh batching remove the expensive rapid-scroll path
+without adding a large browser or Qt runtime.
 
 ## Custom application icon
 
 Place a square PNG at `images/icon.png` before building. The app uses it for the
 window, notification area, and Windows executable icon. A transparent image of
-at least 256×256 is recommended. Missing or invalid artwork falls back to the
-built-in generated icon.
+at least 256×256 is recommended. Missing or invalid artwork uses the generated
+window/tray icon and leaves the executable with its default build icon.
 
 ## HE30 safety behavior
 
@@ -207,7 +208,7 @@ Other configuration bytes are preserved. See [HE30 protocol notes](docs/PROTOCOL
 | `he_keyboard_mapper/ui/theme.py` | Central colors, fonts, and ttk styles |
 | `he_keyboard_mapper/ui/assets.py` | Optional `images/icon.png` discovery and loading |
 | `he_keyboard_mapper/ui/keyboard_view.py` | Reusable proportional keyboard canvas |
-| `he_keyboard_mapper/ui/controller_grid.py` | Reusable 5×5 icon action picker |
+| `he_keyboard_mapper/ui/controller_grid.py` | Responsive 26-action icon picker |
 | `he_keyboard_mapper/ui/hotkey_recorder.py` | Key-combination recording control |
 | `he_keyboard_mapper/ui/widgets.py` | Reusable switches and scrolling components |
 | `he_keyboard_mapper/ui/app.py` | Window composition and UI event wiring |

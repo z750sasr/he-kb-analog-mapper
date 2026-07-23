@@ -29,8 +29,8 @@ class ControllerAction:
 
 
 CONTROLLER_ACTIONS: tuple[ControllerAction, ...] = (
-    # The order mirrors the supplied 01-25 SVG pack, producing an intentional
-    # 5×5 grid in the mapping panel.
+    # The order mirrors the supplied 01-25 SVG pack; Unassigned follows as the
+    # 26th, deliberately text-only action in the compact responsive grid.
     ControllerAction("button_a", "Button A", "A", "01_button_a.png"),
     ControllerAction("button_b", "Button B", "B", "02_button_b.png"),
     ControllerAction("button_x", "Button X", "X", "03_button_x.png"),

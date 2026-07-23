@@ -37,7 +37,7 @@ class MapperWindow(tk.Tk):
         super().__init__()
         self.title("Hall Analog Mapper")
         self.geometry("1240x800")
-        self.minsize(940, 680)
+        self.minsize(940, 720)
         self.configure(bg=BG)
         self.protocol("WM_DELETE_WINDOW", self.hide_to_tray)
         self._window_icon = None
@@ -213,12 +213,12 @@ class MapperWindow(tk.Tk):
         ttk.Label(panel, text="SELECTED KEY", style="SurfaceMuted.TLabel").pack(anchor="w")
         ttk.Label(panel, textvariable=self.selected_var, style="SurfaceSelected.TLabel").pack(
             anchor="w",
-            pady=(3, 14),
+            pady=(2, 8),
         )
         ttk.Label(panel, text="Controller output", style="SurfaceMuted.TLabel").pack(anchor="w")
         ttk.Label(panel, textvariable=self.action_var, style="SurfaceHeading.TLabel").pack(
             anchor="w",
-            pady=(3, 8),
+            pady=(2, 4),
         )
         self.action_grid = ControllerActionGrid(panel, on_select=self._mapping_changed)
         self.action_grid.pack(fill="both", expand=True)

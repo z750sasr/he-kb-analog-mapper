@@ -35,10 +35,10 @@ class ControllerActionGrid(ttk.Frame):
         self.images: dict[str, ImageTk.PhotoImage] = {}
         # Reserve icon space for Unassigned with a fully transparent image.
         # The button stays aligned without displaying a misleading logo.
-        self.blank_image = tk.PhotoImage(width=32, height=32)
-        # Five columns keep labels readable while still fitting all 26 actions
-        # inside the fixed-height Mapping tab (the last row contains Off).
-        self.columns = 5
+        self.blank_image = tk.PhotoImage(width=24, height=24)
+        # Six columns turn 26 actions into five compact rows, keeping the
+        # entire picker—including the final text-only Off tile—on one screen.
+        self.columns = 6
         for column in range(self.columns):
             self.columnconfigure(column, weight=1, uniform="controller-actions")
         self._build()
@@ -52,7 +52,7 @@ class ControllerActionGrid(ttk.Frame):
                 with Image.open(path) as source:
                     # Resizing happens once during window construction. Compact
                     # icons let every action remain visible without scrolling.
-                    icon = source.convert("RGBA").resize((32, 32), Image.Resampling.LANCZOS)
+                    icon = source.convert("RGBA").resize((24, 24), Image.Resampling.LANCZOS)
                     image = ImageTk.PhotoImage(icon)
                 self.images[action.value] = image
             if image is None:
@@ -70,8 +70,8 @@ class ControllerActionGrid(ttk.Frame):
                 row=index // self.columns,
                 column=index % self.columns,
                 sticky="nsew",
-                padx=3,
-                pady=3,
+                padx=2,
+                pady=2,
             )
             self.buttons[action.value] = button
 

@@ -47,7 +47,7 @@ def configure_styles(root) -> None:
     style.configure("Surface.TLabel", background=SURFACE, foreground=TEXT)
     style.configure("SurfaceMuted.TLabel", background=SURFACE, foreground=MUTED)
     style.configure("SurfaceHeading.TLabel", background=SURFACE, foreground=TEXT, font=(FONT_SEMIBOLD, 14))
-    style.configure("SurfaceSelected.TLabel", background=SURFACE, foreground=TEXT, font=(FONT_SEMIBOLD, 17))
+    style.configure("SurfaceSelected.TLabel", background=SURFACE, foreground=TEXT, font=(FONT_SEMIBOLD, 15))
     style.configure("Support.TLabel", background=SURFACE, foreground=AMBER, font=(FONT_SEMIBOLD, 9))
     style.configure("SupportError.TLabel", background=SURFACE, foreground=RED, font=(FONT_SEMIBOLD, 9))
     style.configure("TButton", background=SURFACE_3, foreground=TEXT, padding=(11, 8), borderwidth=1)
