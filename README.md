@@ -15,6 +15,10 @@ user interface.
   selection glow, mapped-key marker, and live Hall-travel fill.
 - Per-key mappings for both sticks, both analog triggers, face buttons, bumpers,
   D-pad directions, Start/Back, and stick clicks.
+- A responsive controller-action grid with all 25 supplied icons, a separately
+  supported Menu/Guide action, and a text-only Unassigned action.
+- Optional global shortcuts to start/stop mapping or completely exit the app
+  while its window is hidden.
 - Separate mapping sets for each keyboard adapter.
 - Linear, gentle, S-curve, and fast response curves.
 - Configurable raw deadzone, full-travel value, sensitivity, and digital-button
@@ -30,7 +34,7 @@ user interface.
 
 | Adapter | Auto detection | Hall input | Profiles/layers | Digital-output policy |
 | --- | --- | --- | --- | --- |
-| EPOMAKER HE30 / GT60 (`19F5:FB27`, `FB4C`, `FB79`) | Yes | Yes | Yes | Not exposed safely by known firmware |
+| EPOMAKER HE30 (`19F5:FB4C`) | Yes | Yes | Yes | Not exposed safely by known firmware |
 
 The HE30 protocol cannot safely implement typing suppression: its `0xA0` Hall
 report identifies the key using the key's current mapping triplet. Temporarily
@@ -79,10 +83,23 @@ On first launch:
 The default HE30 mapping assigns `W/A/S/D` to the left stick, `Q/E` to LT/RT,
 and Space to Xbox A.
 
+The main window uses a fixed keyboard-and-sidebar layout: select a physical key
+on the left, then assign it from the Mapping tab on the right. Response,
+keyboard-output, and shortcut settings swap in the same sidebar, so key mapping
+does not require scrolling away from the keyboard.
+
+**Button threshold** applies only to digital controller actions. At `0.45`, a
+mapped face button, bumper, D-pad direction, Start/Back, Menu/Guide, or stick
+click turns on at 45% processed travel and releases below it. Analog sticks and
+triggers keep their continuous values. Deadzone, curve, and sensitivity are
+applied before the threshold comparison.
+
 ## Background behavior
 
 - Closing the window hides it instead of stopping the mapper.
 - The tray menu can open, start, stop, or exit the application.
+- Shortcuts registered in **App shortcuts** work while the app is in the tray.
+  They use the Windows hotkey API and do not install a keystroke-recording hook.
 - Stopping releases all virtual controls and asks the active adapter to restore
   every temporary keyboard setting.
 - Disconnecting a keyboard resets controller output and resumes auto detection.
@@ -106,8 +123,11 @@ renders the new layout and auto detection tries it in priority order.
 ## Build
 
 ```powershell
-.\build.ps1
+.\build.cmd
 ```
+
+`build.cmd` launches the PowerShell build with a process-only execution-policy
+bypass, so it also works on systems where direct `.ps1` execution is disabled.
 
 The windowed executable is created at:
 
@@ -127,7 +147,37 @@ python -m unittest discover -s tests -v
 
 The tests cover report decoding, profile/layer events, mapping resolution,
 temporary HE30 flag restoration, raw conversion, adapter auto detection,
-per-keyboard configuration isolation, response curves, and XInput reports.
+per-keyboard configuration isolation, global-hotkey parsing, response curves,
+and XInput reports.
+
+## Performance design
+
+- HID reading and controller output run on a dedicated worker thread; Tk drawing
+  and tray interaction stay on the main UI thread.
+- Settings are cloned only when the user changes them. The report loop reads a
+  versioned snapshot instead of serializing the whole config per Hall sample.
+- High-rate telemetry remains full speed for controller output, while UI samples
+  are coalesced by physical key and Canvas redraws are limited to display rate.
+- Controller reports are skipped when the computed XInput state is unchanged.
+- The interface has no vertically scrolling application canvas; the keyboard is
+  fixed and settings switch through a responsive sidebar.
+
+The app deliberately leaves processor affinity under the Windows scheduler.
+Pinning a lightweight, mostly I/O-bound process away from cores 0/1 usually adds
+context-switch and power-management costs without lowering input latency.
+
+Tk 8.6 draws widgets and Canvas content through CPU/GDI rendering and has no
+hardware-acceleration switch. Windows still GPU-composites the finished window,
+but migrating the widget tree to WebView2 or Qt Quick would be a separate UI
+rewrite. The fixed layout and refresh batching remove the expensive rapid-scroll
+path without adding a large browser or Qt runtime.
+
+## Custom application icon
+
+Place a square PNG at `images/icon.png` before building. The app uses it for the
+window, notification area, and Windows executable icon. A transparent image of
+at least 256×256 is recommended. Missing or invalid artwork falls back to the
+built-in generated icon.
 
 ## HE30 safety behavior
 
@@ -148,15 +198,20 @@ Other configuration bytes are preserved. See [HE30 protocol notes](docs/PROTOCOL
 
 | Path | Purpose |
 | --- | --- |
-| `he30_mapper/keyboards/base.py` | Stable adapter, layout, event, and capability contracts |
-| `he30_mapper/keyboards/registry.py` | Adapter discovery and automatic connection |
-| `he30_mapper/keyboards/he30/` | HE30 layout, protocol, conversion, and capability implementation |
-| `he30_mapper/service.py` | Brand-independent reconnect and mapping worker |
-| `he30_mapper/controller.py` | Response curves, aggregation, and direct ViGEm output |
-| `he30_mapper/ui/theme.py` | Central colors, fonts, and ttk styles |
-| `he30_mapper/ui/keyboard_view.py` | Reusable proportional keyboard canvas |
-| `he30_mapper/ui/widgets.py` | Reusable switches and scrolling components |
-| `he30_mapper/ui/app.py` | Window composition and UI event wiring |
+| `he_keyboard_mapper/keyboards/base.py` | Stable adapter, layout, event, and capability contracts |
+| `he_keyboard_mapper/keyboards/registry.py` | Adapter discovery and automatic connection |
+| `he_keyboard_mapper/keyboards/he30/` | HE30 layout, protocol, conversion, and capability implementation |
+| `he_keyboard_mapper/service.py` | Brand-independent reconnect and mapping worker |
+| `he_keyboard_mapper/controller.py` | Response curves, aggregation, and direct ViGEm output |
+| `he_keyboard_mapper/hotkeys.py` | Global shortcut parsing and Windows registration |
+| `he_keyboard_mapper/ui/theme.py` | Central colors, fonts, and ttk styles |
+| `he_keyboard_mapper/ui/assets.py` | Optional `images/icon.png` discovery and loading |
+| `he_keyboard_mapper/ui/keyboard_view.py` | Reusable proportional keyboard canvas |
+| `he_keyboard_mapper/ui/controller_grid.py` | Reusable 5×5 icon action picker |
+| `he_keyboard_mapper/ui/hotkey_recorder.py` | Key-combination recording control |
+| `he_keyboard_mapper/ui/widgets.py` | Reusable switches and scrolling components |
+| `he_keyboard_mapper/ui/app.py` | Window composition and UI event wiring |
+| `controller_icons/` | Lightweight PNG renderings of the source SVG controller icons |
 | `examples/keyboard_adapter_template/` | Copyable integration skeleton |
 | `tests/` | Hardware-independent regression tests |
 

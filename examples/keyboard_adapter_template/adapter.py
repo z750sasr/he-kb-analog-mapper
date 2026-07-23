@@ -1,6 +1,6 @@
 """Minimal registry glue plus the keyboard's raw-to-analog conversion."""
 
-from he30_mapper.keyboards.base import KeyboardAdapter, TravelCalibration
+from he_keyboard_mapper.keyboards.base import KeyboardAdapter, TravelCalibration
 
 from .layout import LAYOUT
 from .protocol import BrandProtocol

@@ -1,1 +1,1 @@
-"""Copy this directory under he30_mapper/keyboards and rename it."""
+"""Copy this directory under he_keyboard_mapper/keyboards and rename it."""

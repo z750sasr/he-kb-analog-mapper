@@ -1,16 +1,15 @@
 # HE30 analog-report notes
 
 These details were carried over from the capture-derived EPOMAKER HE30 alternate
-web driver. They are intentionally isolated in `he30_mapper/protocol.py` so UI
-and controller code never manipulate raw firmware bytes.
+web driver. They are intentionally isolated in
+`he_keyboard_mapper/keyboards/he30/protocol.py` so UI and controller code never
+manipulate raw firmware bytes.
 
 ## Normal devices
 
 | VID:PID | Model | Profiles |
 | --- | --- | --- |
-| `19F5:FB27` | EPOMAKER HE30 | 1 |
 | `19F5:FB4C` | EPOMAKER HE30 | 3 |
-| `19F5:FB79` | EPOMAKER GT60 | 1 |
 
 Only normal configuration devices are listed. Updater and bootloader interfaces
 are deliberately unsupported.

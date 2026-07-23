@@ -4,7 +4,7 @@ The mapper discovers adapter packages automatically. Supporting another brand
 does not require editing the controller, background service, tray, configuration
 window, or keyboard renderer.
 
-Create `he30_mapper/keyboards/<your_keyboard>/` with these three implementation
+Create `he_keyboard_mapper/keyboards/<your_keyboard>/` with these three implementation
 files and an empty `__init__.py`:
 
 ## 1. `layout.py` — physical visualization
@@ -94,4 +94,4 @@ devices.
 - Add a fake-HID lifecycle test covering temporary state restoration.
 - Confirm `KeyboardRegistry().definitions()` contains the adapter.
 - Run `python -m unittest discover -s tests -v`.
-- Build with `.\build.ps1`; the spec collects adapter submodules dynamically.
+- Build with `.\build.cmd`; the spec collects adapter submodules dynamically.

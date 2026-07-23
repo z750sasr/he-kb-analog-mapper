@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from he30_mapper.controller import ControllerState, MappingEngine, SignalProcessor, VirtualXboxController
-from he30_mapper.models import MapperConfig
+from he_keyboard_mapper.constants import ACTION_BY_ID, CONTROLLER_ACTIONS
+from he_keyboard_mapper.controller import ControllerState, MappingEngine, SignalProcessor, VirtualXboxController
+from he_keyboard_mapper.models import MapperConfig
 
 
 class SignalProcessorTests(unittest.TestCase):
@@ -53,6 +54,11 @@ class MappingEngineTests(unittest.TestCase):
 
 
 class XboxReportTests(unittest.TestCase):
+    def test_controller_picker_has_menu_plus_text_only_unassigned(self) -> None:
+        self.assertEqual(len(CONTROLLER_ACTIONS), 26)
+        self.assertEqual(ACTION_BY_ID["menu"].icon, "07_menu.png")
+        self.assertIsNone(ACTION_BY_ID["none"].icon)
+
     def test_state_is_encoded_without_loading_windows_driver(self) -> None:
         report = VirtualXboxController._report(
             ControllerState(
@@ -66,6 +72,12 @@ class XboxReportTests(unittest.TestCase):
         self.assertEqual(report.bRightTrigger, 255)
         self.assertEqual(report.sThumbLX, -32767)
         self.assertEqual(report.sThumbLY, 16384)
+
+    def test_menu_uses_the_vigem_xbox_guide_bit(self) -> None:
+        report = VirtualXboxController._report(
+            ControllerState(buttons=frozenset({"menu"}))
+        )
+        self.assertEqual(report.wButtons, 0x0400)
 
 
 if __name__ == "__main__":

@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from he30_mapper.config import load_config, save_config
-from he30_mapper.models import MapperConfig
+from he_keyboard_mapper.config import load_config, save_config
+from he_keyboard_mapper.models import MapperConfig
 
 
 class ConfigTests(unittest.TestCase):
@@ -52,6 +52,28 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(loaded.keyboard_keys_enabled)
         self.assertTrue(loaded.gamepad_mapping_override)
         self.assertEqual(loaded.preferred_keyboard, "example_other_keyboard")
+
+    def test_global_hotkeys_are_normalized_and_round_trip(self) -> None:
+        config = MapperConfig(
+            start_stop_hotkey=" shift + ctrl + m ",
+            exit_hotkey="Ctrl+Alt+F12",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            save_config(config, path)
+            loaded = load_config(path)
+        self.assertEqual(loaded.start_stop_hotkey, "Ctrl+Shift+M")
+        self.assertEqual(loaded.exit_hotkey, "Ctrl+Alt+F12")
+
+    def test_duplicate_or_invalid_hotkeys_are_cleared(self) -> None:
+        duplicate = MapperConfig(
+            start_stop_hotkey="Ctrl+M",
+            exit_hotkey="Ctrl+M",
+        ).sanitize()
+        invalid = MapperConfig(start_stop_hotkey="Ctrl+DefinitelyNotAKey").sanitize()
+        self.assertEqual(duplicate.start_stop_hotkey, "Ctrl+M")
+        self.assertEqual(duplicate.exit_hotkey, "")
+        self.assertEqual(invalid.start_stop_hotkey, "")
 
 
 if __name__ == "__main__":

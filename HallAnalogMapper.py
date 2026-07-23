@@ -10,8 +10,8 @@ import queue
 import sys
 import time
 
-from he30_mapper.config import load_config
-from he30_mapper.service import MapperService
+from he_keyboard_mapper.config import load_config
+from he_keyboard_mapper.service import MapperService
 
 
 def run_headless() -> None:
@@ -37,6 +37,6 @@ if __name__ == "__main__":
     if "--headless" in sys.argv or "--noui" in sys.argv:
         run_headless()
     else:
-        from he30_mapper.ui import run_app
+        from he_keyboard_mapper.ui import run_app
 
         run_app()

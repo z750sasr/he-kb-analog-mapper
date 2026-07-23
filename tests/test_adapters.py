@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from he30_mapper.keyboards import (
+from he_keyboard_mapper.keyboards import (
     KeyboardAdapter,
     KeyboardCapabilities,
     KeyboardIdentity,
@@ -11,8 +11,8 @@ from he30_mapper.keyboards import (
     KeyboardRegistry,
     TravelCalibration,
 )
-from he30_mapper.keyboards.base import KeyboardUnavailable
-from he30_mapper.keyboards.he30.adapter import HE30Adapter
+from he_keyboard_mapper.keyboards.base import KeyboardUnavailable
+from he_keyboard_mapper.keyboards.he30.adapter import HE30Adapter
 
 
 TEST_LAYOUT = KeyboardLayout(

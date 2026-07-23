@@ -1,0 +1,15 @@
+bật chế độ ẩn danh, mở tab mới trống không, mở console inspect ra, vào tab network, 
+tick vào 2 ô disable cache và preserve logs, để ở đấy
+
+ở tab trống đấy, vào trang chủ web driver, kết nối bàn phím và làm hết mọi thứ ông có thể làm
+từ bind phím đến chỉnh độ nhạy của phím nam châm, v v làm hết mọi thứ có thể
+
+bật cái hoạt hình thể hiện hành trình phím khi mà ông bấm, tức là
+ở chỗ chỉnh custom actuation có cái bật key test, bật cái đấy lên rồi spam 1 lồn phím
+cái này bản chất là expose chế độ debug api của cảm biến từ trường
+
+cuối cùng xong xuôi thì ở vẫn ở bảng inspect, tab network, có nút tải ở đấy
+tải về (Export HAR - Sanitized)
+
+cuối cùng vứt cho con ai cái file HAR đấy và cái repo này, nó sẽ biết phải làm gì
+build phần mềm, chạy test rồi tận hưởng thành quả

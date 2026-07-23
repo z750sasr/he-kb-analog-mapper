@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from he30_mapper.models import TelemetryEvent
-from he30_mapper.protocol import HE30Protocol, MappingResolver, decode_profile_change_report, decode_telemetry_report
+from he_keyboard_mapper.models import TelemetryEvent
+from he_keyboard_mapper.protocol import (
+    HE30Protocol,
+    MappingResolver,
+    decode_profile_change_report,
+    decode_telemetry_report,
+)
 
 
 class FakeHidDevice:

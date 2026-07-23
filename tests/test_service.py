@@ -4,8 +4,8 @@ import threading
 import time
 import unittest
 
-from he30_mapper.controller import ControllerState
-from he30_mapper.keyboards import (
+from he_keyboard_mapper.controller import ControllerState
+from he_keyboard_mapper.keyboards import (
     DigitalOutputPolicy,
     KeyboardAdapter,
     KeyboardCapabilities,
@@ -15,8 +15,8 @@ from he30_mapper.keyboards import (
     KeyboardRegistry,
     KeyTravelEvent,
 )
-from he30_mapper.models import MapperConfig
-from he30_mapper.service import MapperService
+from he_keyboard_mapper.models import MapperConfig
+from he_keyboard_mapper.service import MapperService
 
 
 SERVICE_LAYOUT = KeyboardLayout("service_test", "Service test", ((KeyboardKey(1, "A"),),))
@@ -79,6 +79,23 @@ class RecordingController:
 
 
 class MapperServiceTests(unittest.TestCase):
+    def test_service_owns_a_versioned_config_snapshot(self) -> None:
+        original = MapperConfig(sensitivity=1.0).sanitize()
+        service = MapperService(
+            original,
+            registry=KeyboardRegistry((StreamingAdapter,)),
+            controller_factory=RecordingController,
+        )
+        snapshot, revision = service._config_snapshot()
+        original.sensitivity = 3.0
+        self.assertEqual(snapshot.sensitivity, 1.0)
+        self.assertEqual(revision, 0)
+
+        service.update_config(original)
+        updated, next_revision = service._config_snapshot()
+        self.assertEqual(updated.sensitivity, 3.0)
+        self.assertEqual(next_revision, 1)
+
     def test_adapter_policy_and_travel_flow_through_shared_service(self) -> None:
         config = MapperConfig(
             mappings={},
