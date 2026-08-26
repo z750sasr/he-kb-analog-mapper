@@ -6,9 +6,9 @@
 A modular Windows tray application that converts Hall-effect keyboard travel
 into a virtual Xbox 360 controller.
 
-The first built-in adapter supports the EPOMAKER HE30 keyboard. Additional brands
-can be added without changing the mapper service, controller output, tray, or
-user interface.
+Built-in adapters support the EPOMAKER HE30 and Everglide AE64 Pro. Additional
+brands can be added without changing the mapper service, controller output,
+tray, or user interface.
 
 ## Features
 
@@ -38,12 +38,21 @@ user interface.
 | Adapter | Auto detection | Hall input | Profiles/layers | Digital-output policy |
 | --- | --- | --- | --- | --- |
 | EPOMAKER HE30 (`19F5:FB4C`) | Yes | Yes | Yes | Not exposed safely by known firmware |
+| Everglide AE64 Pro (`1CA6:300A`, `FFB0:0001`) | Yes | Yes, row-polled | Profiles/layers exposed by firmware | Not changed by this adapter |
 
 The HE30 protocol cannot safely implement typing suppression: its `0xA0` Hall
 report identifies the key using the key's current mapping triplet. Temporarily
 unmapping several keys would make their analog reports indistinguishable. The UI
 therefore saves the requested policy and reports the limitation instead of
 pretending it works or installing a system-wide Windows keyboard hook.
+
+The AE64 Pro adapter uses only the normal vendor configuration collection. It
+confirms board ID `0030000A`, then reads five `04 03 01 <row>` Hall route-data
+rows. It sends no writes: no firmware, calibration, mapping, profile, or RGB
+settings are changed by controller emulation. Route values are thousandths of a
+millimetre; the adapter defaults to a 4,000-unit (4 mm) scale when it sees the
+HE30-era 350-unit default. Set **Raw full travel** to your switch's reported
+range—normally 3,000–4,000—for a custom scale.
 
 Future adapters can implement the same policy through their own firmware:
 
@@ -205,6 +214,7 @@ Other configuration bytes are preserved. See [HE30 protocol notes](docs/PROTOCOL
 | `he_keyboard_mapper/keyboards/base.py` | Stable adapter, layout, event, and capability contracts |
 | `he_keyboard_mapper/keyboards/registry.py` | Adapter discovery and automatic connection |
 | `he_keyboard_mapper/keyboards/he30/` | HE30 layout, protocol, conversion, and capability implementation |
+| `he_keyboard_mapper/keyboards/everglide_ae64pro/` | AE64 Pro matrix, read-only polling protocol, and conversion |
 | `he_keyboard_mapper/service.py` | Brand-independent reconnect and mapping worker |
 | `he_keyboard_mapper/controller.py` | Response curves, aggregation, and direct ViGEm output |
 | `he_keyboard_mapper/hotkeys.py` | Global shortcut parsing and Windows registration |

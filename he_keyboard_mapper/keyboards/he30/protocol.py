@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from ...models import ProfileChangeEvent, TelemetryEvent
+from ..base import device_selection_id
 from .layout import HE30_MODELS, PHYSICAL_BY_HID, PHYSICAL_BY_INDEX
 
 try:  # Optional at import time so pure unit tests run without Windows drivers.
@@ -27,6 +28,7 @@ REQUEST_PREFIX = 0x55
 RESPONSE_PREFIX = 0xAA
 LAYER_COUNT = 4
 KEY_COUNT = 128
+HE30_ADAPTER_IDS = {"epomaker_he30"}
 
 
 class HE30Error(RuntimeError):
@@ -129,9 +131,15 @@ class MappingResolver:
 class HE30Protocol:
     """Synchronous hidapi session used exclusively by the mapper service thread."""
 
-    def __init__(self, hid_backend: Any | None = None, timeout_ms: int = 1800) -> None:
+    def __init__(
+        self,
+        hid_backend: Any | None = None,
+        timeout_ms: int = 1800,
+        preferred_id: str = "auto",
+    ) -> None:
         self.hid = hid_backend if hid_backend is not None else _hid
         self.timeout_ms = timeout_ms
+        self.preferred_id = preferred_id
         self.device: Any | None = None
         self.device_info: dict[str, Any] | None = None
         self.model_name = "EPOMAKER HE30"
@@ -159,11 +167,16 @@ class HE30Protocol:
             ),
         )
 
+    def _matches_preferred_device(self, info: dict[str, Any]) -> bool:
+        if self.preferred_id in ("auto", "") or self.preferred_id in HE30_ADAPTER_IDS:
+            return True
+        return device_selection_id("epomaker_he30", info) == self.preferred_id
+
     def connect(self) -> dict[str, Any]:
         """Probe known HE30 interfaces with a harmless active-profile request."""
 
         errors: list[str] = []
-        for info in self.enumerate_candidates():
+        for info in (item for item in self.enumerate_candidates() if self._matches_preferred_device(item)):
             candidate = self.hid.device()
             try:
                 candidate.open_path(info["path"])

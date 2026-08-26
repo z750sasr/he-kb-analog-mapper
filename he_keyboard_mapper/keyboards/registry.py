@@ -7,7 +7,7 @@ import pkgutil
 from collections.abc import Iterable
 from typing import Any
 
-from .base import KeyboardAdapter, KeyboardUnavailable
+from .base import KeyboardAdapter, KeyboardDeviceDescriptor, KeyboardUnavailable
 
 
 def discover_adapter_types() -> tuple[type[KeyboardAdapter], ...]:
@@ -55,11 +55,31 @@ class KeyboardRegistry:
         return self.adapter_types
 
     def adapter_type(self, adapter_id: str) -> type[KeyboardAdapter] | None:
-        return next((item for item in self.adapter_types if item.adapter_id == adapter_id), None)
+        base_id = adapter_id.split(":", 1)[0]
+        return next((item for item in self.adapter_types if item.adapter_id == base_id), None)
 
     def default_layout(self, preferred_id: str = "auto"):
         preferred = self.adapter_type(preferred_id) if preferred_id != "auto" else None
         return (preferred or self.adapter_types[0]).layout
+
+    def enumerate_devices(self) -> tuple[KeyboardDeviceDescriptor, ...]:
+        """List plugged-in physical keyboards without starting controller output."""
+
+        devices: list[KeyboardDeviceDescriptor] = []
+        for adapter_type in self.adapter_types:
+            adapter = adapter_type(self.hid_backend)
+            try:
+                devices.extend(adapter.enumerate_devices())
+            except Exception:
+                # A failing adapter should not prevent the window from opening
+                # or hide other brands that can be detected successfully.
+                pass
+            finally:
+                try:
+                    adapter.close()
+                except Exception:
+                    pass
+        return tuple(devices)
 
     def connect(self, preferred_id: str = "auto") -> tuple[KeyboardAdapter, object]:
         """Open the requested adapter or probe every installed adapter."""
@@ -74,7 +94,7 @@ class KeyboardRegistry:
 
         failures: list[str] = []
         for adapter_type in candidates:
-            adapter = adapter_type(self.hid_backend)
+            adapter = adapter_type(self.hid_backend, preferred_id=preferred_id)
             try:
                 return adapter, adapter.connect()
             except Exception as error:

@@ -9,6 +9,11 @@ from he_keyboard_mapper.protocol import (
     decode_profile_change_report,
     decode_telemetry_report,
 )
+from he_keyboard_mapper.keyboards.everglide_ae64pro.protocol import (
+    AE64Protocol,
+    EXPECTED_BOARD_ID,
+    decode_axis_data_report,
+)
 
 
 class FakeHidDevice:
@@ -119,6 +124,95 @@ class ProtocolLifecycleTests(unittest.TestCase):
         self.assertEqual([backend.handle.config[index * 64 + 7] & 8 for index in range(3)], [8, 8, 8])
         protocol.close()
         self.assertEqual([backend.handle.config[index * 64 + 7] & 8 for index in range(3)], [0, 0, 0])
+        self.assertTrue(backend.handle.closed)
+
+
+class FakeAE64Device:
+    """Small in-memory version of the read-only AE64 WebHID surface."""
+
+    def __init__(self) -> None:
+        self.rows = {row: [0] * 30 for row in range(1, 6)}
+        self.responses: list[list[int]] = []
+        self.closed = False
+
+    def open_path(self, _path: bytes) -> None: pass
+    def set_nonblocking(self, _value: bool) -> None: pass
+
+    def write(self, report: bytes) -> int:
+        payload = list(report[1:])
+        response = [0] * 64
+        response[0:2] = payload[0:2]
+        if payload[:2] == [0x01, 0x02]:
+            response[4:8] = list(EXPECTED_BOARD_ID.to_bytes(4, "big"))
+            response[8:12] = [1, 2, 3, 4]
+        elif payload[:2] == [0x02, 0x03]:
+            response[3] = 3
+        elif payload[:2] == [0x04, 0x03]:
+            response[2], response[3] = payload[2], payload[3]
+            for index, value in enumerate(self.rows[payload[3]]):
+                response[4 + index * 2] = value & 0xFF
+                response[5 + index * 2] = value >> 8
+        self.responses.append(response)
+        return len(report)
+
+    def read(self, _size: int, _timeout: int = 0) -> list[int]:
+        return self.responses.pop(0) if self.responses else []
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeAE64Backend:
+    def __init__(self) -> None:
+        self.handle = FakeAE64Device()
+
+    def enumerate(self, vendor_id: int, product_id: int) -> list[dict[str, object]]:
+        if (vendor_id, product_id) != (0x1CA6, 0x300A):
+            return []
+        return [{
+            "vendor_id": vendor_id,
+            "product_id": product_id,
+            "path": b"fake-ae64",
+            "usage_page": 0xFFB0,
+            "usage": 1,
+            "interface_number": 2,
+        }]
+
+    def device(self) -> FakeAE64Device:
+        return self.handle
+
+
+class AE64ProtocolTests(unittest.TestCase):
+    def test_axis_reply_uses_little_endian_travel_values(self) -> None:
+        report = [0x04, 0x03, 1, 2, 0xD2, 0x04] + [0] * 58
+        decoded = decode_axis_data_report(report)
+        self.assertIsNotNone(decoded)
+        assert decoded is not None
+        self.assertEqual(decoded[:2], (1, 2))
+        self.assertEqual(decoded[2][0], 1234)
+
+    def test_ae64_polls_changed_routes_and_emits_releases(self) -> None:
+        backend = FakeAE64Backend()
+        protocol = AE64Protocol(backend, poll_interval_ms=0)
+        info = protocol.connect()
+        self.assertEqual(info["board_id"], EXPECTED_BOARD_ID)
+        self.assertEqual(protocol.profile_count, 3)
+        protocol.prepare_stream()
+        protocol._poll()  # Establish an idle baseline without 64 zero events.
+        self.assertIsNone(protocol.read_event(0))
+        backend.handle.rows[2][1] = 1234  # Physical Q, key id 15.
+        protocol._poll()
+        pressed = protocol.read_event(0)
+        self.assertIsNotNone(pressed)
+        assert pressed is not None
+        self.assertEqual((pressed.key_id, pressed.raw_value, pressed.status), (15, 1234, 1))
+        backend.handle.rows[2][1] = 0
+        protocol._poll()
+        released = protocol.read_event(0)
+        self.assertIsNotNone(released)
+        assert released is not None
+        self.assertEqual((released.key_id, released.raw_value, released.status), (15, 0, 0))
+        protocol.close()
         self.assertTrue(backend.handle.closed)
 
 

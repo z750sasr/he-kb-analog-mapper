@@ -15,8 +15,6 @@ env/
 # Build artifacts
 build/
 dist/
-MchoseConfigurator/bin/
-MchoseConfigurator/obj/
 *.egg-info/
 
 # PyInstaller output

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+import hashlib
 from typing import Any
 
 
@@ -108,6 +109,34 @@ class KeyboardCapabilities:
     layers: bool = False
 
 
+def device_fingerprint(info: dict[str, Any]) -> str:
+    """Return a short stable token for one HID collection path."""
+
+    path = info.get("path", b"")
+    if isinstance(path, bytes):
+        source = path
+    else:
+        source = str(path).encode("utf-8", errors="replace")
+    return hashlib.sha1(source).hexdigest()[:8].upper()
+
+
+def device_selection_id(adapter_id: str, info: dict[str, Any]) -> str:
+    """Build the UI/config identifier for one physical keyboard instance."""
+
+    return f"{adapter_id}:{device_fingerprint(info)}"
+
+
+@dataclass(frozen=True, slots=True)
+class KeyboardDeviceDescriptor:
+    """One selectable physical keyboard discovered before opening the mapper."""
+
+    adapter_id: str
+    selection_id: str
+    display_name: str
+    layout_id: str
+    details: dict[str, Any] = field(default_factory=dict)
+
+
 @dataclass(frozen=True, slots=True)
 class KeyboardIdentity:
     """Detected device metadata shown without leaking raw hidapi dictionaries."""
@@ -115,8 +144,16 @@ class KeyboardIdentity:
     adapter_id: str
     model_name: str
     layout_id: str
+    device_id: str | None = None
+    device_name: str | None = None
     profile_count: int = 1
     details: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def settings_id(self) -> str:
+        """Settings follow the physical device when available."""
+
+        return self.device_id or self.adapter_id
 
 
 class KeyboardAdapter(ABC):
@@ -128,8 +165,14 @@ class KeyboardAdapter(ABC):
     priority: int = 100
     capabilities = KeyboardCapabilities()
 
-    def __init__(self, hid_backend: Any | None = None) -> None:
+    def __init__(self, hid_backend: Any | None = None, preferred_id: str = "auto") -> None:
         self.hid_backend = hid_backend
+        self.preferred_id = preferred_id
+
+    def enumerate_devices(self) -> tuple[KeyboardDeviceDescriptor, ...]:
+        """Return selectable connected devices for this adapter, if supported."""
+
+        return ()
 
     @abstractmethod
     def connect(self) -> KeyboardIdentity:

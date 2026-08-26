@@ -379,7 +379,9 @@ class MapperWindow(tk.Tk):
         save_config(self.config_data)
         self.service.update_config(self.config_data)
         if self.service.running:
-            self.set_status("Adapter preference will take effect after Stop → Start")
+            self.set_status("Switching device adapter...")
+        else:
+            self.set_status("Adapter preference saved")
 
     def select_key(self, key_id: int) -> None:
         key = self.keyboard_view.layout.by_id.get(key_id)
@@ -575,6 +577,8 @@ class MapperWindow(tk.Tk):
 
     def _handle_service_event(self, event: ServiceEvent) -> None:
         if event.kind == "travel" and event.physical_index is not None and event.value is not None:
+            if event.keyboard_id and event.keyboard_id != self.active_adapter_id:
+                return
             value = max(0.0, min(1.0, event.value))
             self.keyboard_view.set_travel(event.physical_index, value)
             return

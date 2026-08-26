@@ -78,6 +78,18 @@ class RecordingController:
         self.closed = True
 
 
+class FirstSwitchAdapter(StreamingAdapter):
+    adapter_id = "first_switch"
+    display_name = "First switch keyboard"
+    last_instance = None
+
+
+class SecondSwitchAdapter(StreamingAdapter):
+    adapter_id = "second_switch"
+    display_name = "Second switch keyboard"
+    last_instance = None
+
+
 class MapperServiceTests(unittest.TestCase):
     def test_service_owns_a_versioned_config_snapshot(self) -> None:
         original = MapperConfig(sensitivity=1.0).sanitize()
@@ -118,6 +130,38 @@ class MapperServiceTests(unittest.TestCase):
         self.assertEqual(bound, {1})
         self.assertTrue(adapter.closed)
         self.assertTrue(controller.closed)
+
+    def test_preferred_keyboard_change_reconnects_without_manual_restart(self) -> None:
+        FirstSwitchAdapter.last_instance = None
+        SecondSwitchAdapter.last_instance = None
+        config = MapperConfig(
+            preferred_keyboard="first_switch",
+            mappings={},
+            keyboard_mappings={
+                "first_switch": {"1": "button_a"},
+                "second_switch": {"1": "button_b"},
+            },
+            auto_start=False,
+        ).sanitize()
+        registry = KeyboardRegistry((FirstSwitchAdapter, SecondSwitchAdapter))
+        controller = RecordingController()
+        service = MapperService(config, registry=registry, controller_factory=lambda: controller)
+
+        service.start()
+        self.assertTrue(controller.travel_received.wait(1.0))
+
+        config.preferred_keyboard = "second_switch"
+        service.update_config(config)
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and not any("button_b" in state.buttons for state in controller.states):
+            time.sleep(0.01)
+        service.stop()
+
+        self.assertIsNotNone(FirstSwitchAdapter.last_instance)
+        self.assertIsNotNone(SecondSwitchAdapter.last_instance)
+        self.assertTrue(FirstSwitchAdapter.last_instance.closed)
+        self.assertTrue(SecondSwitchAdapter.last_instance.closed)
+        self.assertTrue(any("button_b" in state.buttons for state in controller.states))
 
 
 if __name__ == "__main__":

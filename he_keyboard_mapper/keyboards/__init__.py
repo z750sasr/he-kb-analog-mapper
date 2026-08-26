@@ -7,6 +7,7 @@ controller and user-interface layers.
 
 from .base import (
     DigitalOutputPolicy,
+    KeyboardDeviceDescriptor,
     KeyboardAdapter,
     KeyboardCapabilities,
     KeyboardIdentity,
@@ -22,6 +23,7 @@ __all__ = [
     "DigitalOutputPolicy",
     "KeyboardAdapter",
     "KeyboardCapabilities",
+    "KeyboardDeviceDescriptor",
     "KeyboardIdentity",
     "KeyboardKey",
     "KeyboardLayout",

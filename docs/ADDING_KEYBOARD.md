@@ -4,6 +4,12 @@ The mapper discovers adapter packages automatically. Supporting another brand
 does not require editing the controller, background service, tray, configuration
 window, or keyboard renderer.
 
+The Everglide AE64 Pro package is a second, production example. Unlike the
+HE30's asynchronous reports, it polls the manufacturer's captured WebHID
+route-data read command and emits only changed key values. This is a useful
+pattern for keyboards that expose live Hall values through a configuration HID
+collection rather than a dedicated telemetry endpoint.
+
 Create `he_keyboard_mapper/keyboards/<your_keyboard>/` with these three implementation
 files and an empty `__init__.py`:
 

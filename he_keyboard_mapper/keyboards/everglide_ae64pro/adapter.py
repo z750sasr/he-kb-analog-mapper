@@ -1,10 +1,9 @@
-"""Adapter that translates HE30-specific reports into framework events."""
+"""Everglide AE64 Pro glue for the brand-independent mapper service."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from ...models import ProfileChangeEvent, TelemetryEvent
 from ..base import (
     DigitalOutputPolicy,
     KeyboardAdapter,
@@ -12,41 +11,36 @@ from ..base import (
     KeyboardDeviceDescriptor,
     KeyboardIdentity,
     KeyTravelEvent,
-    LayerChangeEvent,
     TravelCalibration,
     device_fingerprint,
     device_selection_id,
 )
-from .layout import HE30_LAYOUT, HE30_MODELS
-from .protocol import HE30Protocol
+from .layout import AE64_LAYOUT, AE64_MODELS
+from .protocol import AE64Protocol
 
 
-class HE30Adapter(KeyboardAdapter):
-    """EPOMAKER HE30/GT60 normal-mode configuration interface."""
+class EverglideAE64ProAdapter(KeyboardAdapter):
+    """Poll read-only AE64 Hall route data and translate it into controller input."""
 
-    adapter_id = "epomaker_he30"
-    display_name = "EPOMAKER HE30 family"
-    layout = HE30_LAYOUT
-    priority = 10
-    capabilities = KeyboardCapabilities(
-        digital_output_policy=False,
-        profiles=True,
-        layers=True,
-    )
+    adapter_id = "everglide_ae64pro"
+    display_name = "Everglide AE64 Pro"
+    layout = AE64_LAYOUT
+    priority = 20
+    capabilities = KeyboardCapabilities(digital_output_policy=False, profiles=True, layers=True)
 
     def __init__(self, hid_backend: Any | None = None, preferred_id: str = "auto") -> None:
         super().__init__(hid_backend, preferred_id)
-        self.protocol = HE30Protocol(hid_backend=hid_backend, preferred_id=self.preferred_id)
+        self.protocol = AE64Protocol(hid_backend=hid_backend, preferred_id=self.preferred_id)
         self.identity: KeyboardIdentity | None = None
 
     def enumerate_devices(self) -> tuple[KeyboardDeviceDescriptor, ...]:
         devices: list[KeyboardDeviceDescriptor] = []
         for info in self.protocol.enumerate_candidates():
             selection_id = device_selection_id(self.adapter_id, info)
-            model_name = HE30_MODELS.get(
+            model_name = AE64_MODELS.get(
                 (int(info.get("vendor_id", 0)), int(info.get("product_id", 0))),
-                ("EPOMAKER HE30", 1),
-            )[0]
+                self.display_name,
+            )
             fingerprint = device_fingerprint(info)
             devices.append(
                 KeyboardDeviceDescriptor(
@@ -81,6 +75,8 @@ class HE30Adapter(KeyboardAdapter):
                 "interface_number": info.get("interface_number"),
                 "usage_page": info.get("usage_page"),
                 "usage": info.get("usage"),
+                "firmware": info.get("firmware"),
+                "board_id": info.get("board_id"),
             },
         )
         return self.identity
@@ -88,42 +84,39 @@ class HE30Adapter(KeyboardAdapter):
     def prepare(self) -> None:
         self.protocol.prepare_stream()
 
-    def read_event(self, timeout_ms: int = 100) -> KeyTravelEvent | LayerChangeEvent | None:
-        event = self.protocol.read_event(timeout_ms)
-        if isinstance(event, ProfileChangeEvent):
-            return LayerChangeEvent(event.profile_index, event.layer, event.global_layer)
-        if not isinstance(event, TelemetryEvent):
-            return None
-        key_id = self.protocol.resolve_physical(event)
-        if key_id is None:
-            return None
-        return KeyTravelEvent(key_id=key_id, raw_value=event.raw_travel, status=event.status)
+    def read_event(self, timeout_ms: int = 100) -> KeyTravelEvent | None:
+        return self.protocol.read_event(timeout_ms)
 
     def normalize_travel(self, raw_value: int, calibration: TravelCalibration) -> float:
-        """Convert the HE30's approximately 0-350 raw range to 0.0-1.0."""
+        """Convert AE64 route distance (thousandths of a millimetre) to 0..1.
+
+        The mapper's historic default full-scale (350) is for the HE30. Keep
+        that default harmless on a newly detected AE64 by using its documented
+        four-millimetre scale until the user supplies an AE64-scale value
+        (typically 3,000–4,000) in Response settings.
+        """
 
         if raw_value <= calibration.deadzone_raw:
             return 0.0
-        span = max(1, calibration.full_scale_raw - calibration.deadzone_raw)
-        return min(1.0, max(0.0, (raw_value - calibration.deadzone_raw) / span))
+        full_scale = calibration.full_scale_raw if calibration.full_scale_raw >= 1000 else 4000
+        return min(
+            1.0,
+            max(0.0, (raw_value - calibration.deadzone_raw) / max(1, full_scale - calibration.deadzone_raw)),
+        )
 
     def apply_digital_output_policy(
         self,
         policy: DigitalOutputPolicy,
         bound_key_ids: set[int],
     ) -> tuple[bool, str]:
-        del bound_key_ids
-        if policy.keyboard_keys_enabled and not policy.gamepad_mapping_override:
-            return False, "Normal HE30 keyboard output remains enabled; suppression is unavailable."
+        del policy, bound_key_ids
         return (
             False,
-            "HE30 firmware does not expose safe gamepad typing suppression. "
-            "Its Hall report contains the current mapping instead of a physical sensor id, "
-            "so unmapping keys would also make analog keys indistinguishable.",
+            "AE64 Pro controller emulation reads Hall travel only; this adapter does not alter keyboard typing output.",
         )
 
     def close(self) -> None:
         self.protocol.close()
 
 
-ADAPTER_CLASS = HE30Adapter
+ADAPTER_CLASS = EverglideAE64ProAdapter

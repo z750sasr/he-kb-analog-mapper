@@ -106,24 +106,32 @@ class MapperService:
 
         while not self._stop.is_set():
             adapter = None
+            reconnect_now = False
             try:
                 config, config_revision = self._config_snapshot()
                 engine.update_config(config)
                 self.events.put(ServiceEvent("searching", "Auto-detecting a supported Hall-effect keyboard..."))
                 adapter, identity = self._registry.connect(config.preferred_keyboard)
-                engine.update_keyboard(identity.adapter_id)
+                settings_id = identity.settings_id
+                config.apply_settings_for(settings_id)
+                engine.update_config(config)
+                engine.update_keyboard(settings_id)
                 self.events.put(
                     ServiceEvent(
                         "detected",
-                        f"Detected {identity.model_name}",
+                        f"Detected {identity.device_name or identity.model_name}",
                         keyboard_id=identity.adapter_id,
                         keyboard_name=identity.model_name,
+                        device_id=settings_id,
+                        device_name=identity.device_name,
                         layout_id=identity.layout_id,
                         digital_output_supported=adapter.capabilities.digital_output_policy,
                     )
                 )
 
-                self.events.put(ServiceEvent("preparing", f"Preparing {identity.model_name} Hall telemetry..."))
+                self.events.put(
+                    ServiceEvent("preparing", f"Preparing {identity.device_name or identity.model_name} Hall telemetry...")
+                )
                 adapter.prepare()
 
                 # Detection intentionally precedes controller creation so the UI
@@ -132,13 +140,14 @@ class MapperService:
                 if controller is None:
                     controller = self._controller_factory()
 
-                policy_key = self._policy_key(config, identity.adapter_id)
+                policy_key = self._policy_key(config, settings_id)
                 policy_supported, policy_message = self._apply_policy(adapter, config)
                 self.events.put(
                     ServiceEvent(
                         "policy",
                         policy_message,
                         keyboard_id=identity.adapter_id,
+                        device_id=settings_id,
                         digital_output_supported=policy_supported,
                     )
                 )
@@ -147,9 +156,11 @@ class MapperService:
                 self.events.put(
                     ServiceEvent(
                         "connected",
-                        f"{identity.model_name} connected",
+                        f"{identity.device_name or identity.model_name} connected",
                         keyboard_id=identity.adapter_id,
                         keyboard_name=identity.model_name,
+                        device_id=settings_id,
+                        device_name=identity.device_name,
                         layout_id=identity.layout_id,
                         digital_output_supported=adapter.capabilities.digital_output_policy,
                     )
@@ -159,9 +170,21 @@ class MapperService:
                     event = adapter.read_event(100)
                     next_config, next_revision = self._config_snapshot()
                     if next_revision != config_revision:
+                        if next_config.preferred_keyboard != config.preferred_keyboard:
+                            reconnect_now = True
+                            config, config_revision = next_config, next_revision
+                            engine.update_config(config)
+                            target = (
+                                "the selected keyboard"
+                                if config.preferred_keyboard != "auto"
+                                else "auto detection"
+                            )
+                            self.events.put(ServiceEvent("switching", f"Switching to {target}..."))
+                            break
                         config, config_revision = next_config, next_revision
+                        config.apply_settings_for(settings_id)
                         engine.update_config(config)
-                        next_policy_key = self._policy_key(config, identity.adapter_id)
+                        next_policy_key = self._policy_key(config, settings_id)
                         if next_policy_key != policy_key:
                             policy_key = next_policy_key
                             supported, message = self._apply_policy(adapter, config)
@@ -170,6 +193,7 @@ class MapperService:
                                     "policy",
                                     message,
                                     keyboard_id=identity.adapter_id,
+                                    device_id=settings_id,
                                     digital_output_supported=supported,
                                 )
                             )
@@ -180,6 +204,7 @@ class MapperService:
                                 "profile",
                                 f"Profile {event.profile_index + 1}, layer {event.display_layer}",
                                 keyboard_id=identity.adapter_id,
+                                device_id=settings_id,
                             )
                         )
                         continue
@@ -197,6 +222,7 @@ class MapperService:
                             value=value,
                             raw_value=event.raw_value,
                             keyboard_id=identity.adapter_id,
+                            device_id=settings_id,
                         )
                     )
             except Exception as error:
@@ -218,6 +244,8 @@ class MapperService:
                     except Exception:
                         pass
 
+            if reconnect_now and not self._stop.is_set():
+                continue
             if not self._stop.wait(2.0):
                 continue
 

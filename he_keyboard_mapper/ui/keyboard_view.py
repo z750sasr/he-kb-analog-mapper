@@ -94,13 +94,25 @@ class KeyboardView(tk.Canvas):
         self._boxes.clear()
         width = max(320, self.winfo_width())
         padding_x, padding_y = 18, 18
-        gap = max(5.0, min(9.0, width / 100))
-        row_gap = max(5.0, gap)
         widest_units = max(sum(key.width for key in row) for row in self.layout.rows)
         widest_gaps = max(len(row) - 1 for row in self.layout.rows)
+        # Dense 64-key layouts gain roughly half a key-width by using a small
+        # inter-key gap. Conventional/smaller layouts preserve the roomier
+        # spacing used by the original HE30 view.
+        gap = (
+            max(3.0, min(5.0, width / 150))
+            if widest_units >= 12
+            else max(5.0, min(9.0, width / 100))
+        )
+        row_gap = max(4.0 if widest_units >= 12 else 5.0, gap)
         available = max(280, width - padding_x * 2)
-        unit = min(82.0, max(32.0, (available - widest_gaps * gap) / widest_units))
-        key_height = min(62.0, max(44.0, unit * 0.74))
+        # Compact 60/65% layouts can have 14–15 units on one row. Let those
+        # use a smaller unit while retaining the HE30's comfortable 32px
+        # minimum; that keeps a newly detected AE64 Pro on screen instead of
+        # clipping its rightmost keys at the window's minimum width.
+        minimum_unit = 22.0 if widest_units >= 12 else 32.0
+        unit = min(82.0, max(minimum_unit, (available - widest_gaps * gap) / widest_units))
+        key_height = min(62.0, max(42.0 if widest_units >= 12 else 44.0, unit * 0.74))
         board_width = widest_units * unit + widest_gaps * gap
         board_x = (width - board_width) / 2
         total_height = len(self.layout.rows) * key_height + (len(self.layout.rows) - 1) * row_gap
@@ -153,23 +165,25 @@ class KeyboardView(tk.Canvas):
         action_id = self.mappings.get(str(key.key_id), "none")
         action = ACTION_BY_ID.get(action_id, ACTION_BY_ID["none"])
         key_width = x2 - x1
-        primary_size = 13 if key_width >= 60 else 10
-        physical_text = f"Physical: {key.label}" if key_width >= 110 else key.label
+        primary_size = 13 if key_width >= 60 else 10 if key_width >= 40 else 7
+        compact_label = {"Backspace": "Bksp"}.get(key.label, key.label)
+        physical_text = f"Physical: {key.label}" if key_width >= 110 else compact_label
+        inset = max(4, min(10, key_width * 0.18))
         self.create_text(
-            x1 + 10,
-            y1 + 19,
+            x1 + inset,
+            y1 + min(16, (y2 - y1) * 0.35),
             text=action.short,
             anchor="w",
             fill=TEXT,
             font=("Segoe UI Semibold", primary_size),
         )
         self.create_text(
-            x1 + 10,
-            y2 - 13,
+            x1 + inset,
+            y2 - min(9, (y2 - y1) * 0.20),
             text=physical_text,
             anchor="w",
             fill=MUTED,
-            font=("Segoe UI Semibold", 8 if key_width >= 60 else 7),
+            font=("Segoe UI Semibold", 8 if key_width >= 60 else 7 if key_width >= 40 else 6),
         )
         if bound:
             self.create_oval(x1 + 6, y1 + 6, x1 + 11, y1 + 11, fill=MINT, outline="")
