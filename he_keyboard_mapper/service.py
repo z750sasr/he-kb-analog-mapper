@@ -92,12 +92,12 @@ class MapperService:
             frozenset(config.bound_key_ids(keyboard_id)),
         )
 
-    def _apply_policy(self, adapter, config: MapperConfig) -> tuple[bool, str]:
+    def _apply_policy(self, adapter, config: MapperConfig, settings_id: str) -> tuple[bool, str]:
         policy = DigitalOutputPolicy(
             keyboard_keys_enabled=config.keyboard_keys_enabled,
             gamepad_mapping_override=config.gamepad_mapping_override,
         )
-        return adapter.apply_digital_output_policy(policy, config.bound_key_ids(adapter.adapter_id))
+        return adapter.apply_digital_output_policy(policy, config.bound_key_ids(settings_id))
 
     def _run(self) -> None:
         controller: ControllerOutput | None = None
@@ -141,7 +141,7 @@ class MapperService:
                     controller = self._controller_factory()
 
                 policy_key = self._policy_key(config, settings_id)
-                policy_supported, policy_message = self._apply_policy(adapter, config)
+                policy_supported, policy_message = self._apply_policy(adapter, config, settings_id)
                 self.events.put(
                     ServiceEvent(
                         "policy",
@@ -187,7 +187,7 @@ class MapperService:
                         next_policy_key = self._policy_key(config, settings_id)
                         if next_policy_key != policy_key:
                             policy_key = next_policy_key
-                            supported, message = self._apply_policy(adapter, config)
+                            supported, message = self._apply_policy(adapter, config, settings_id)
                             self.events.put(
                                 ServiceEvent(
                                     "policy",

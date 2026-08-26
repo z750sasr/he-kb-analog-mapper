@@ -54,12 +54,11 @@ class MapperWindow(tk.Tk):
         self.hotkeys = GlobalHotkeyManager(self.hotkey_events)
         self._recording_hotkey = False
 
-        self._adapter_labels = {
-            adapter.display_name: adapter.adapter_id
-            for adapter in self.registry.definitions()
-        }
-        self._adapter_labels[AUTO_DETECT_LABEL] = "auto"
+        self._adapter_labels: dict[str, str] = {}
+        self._refresh_keyboard_choices()
         self.active_adapter_id = self._initial_adapter_id()
+        self.active_settings_id = self._initial_settings_id()
+        self.config_data.apply_settings_for(self.active_settings_id)
         initial_layout = self.registry.default_layout(self.config_data.preferred_keyboard)
         self.selected_key_id = initial_layout.keys[0].key_id
         self.digital_output_supported = False
@@ -97,12 +96,30 @@ class MapperWindow(tk.Tk):
     def _initial_adapter_id(self) -> str:
         if self.config_data.preferred_keyboard != "auto":
             if self.registry.adapter_type(self.config_data.preferred_keyboard):
-                return self.config_data.preferred_keyboard
+                return self.config_data.preferred_keyboard.split(":", 1)[0]
         return self.registry.definitions()[0].adapter_id
+
+    def _initial_settings_id(self) -> str:
+        if self.config_data.preferred_keyboard != "auto":
+            if self.registry.adapter_type(self.config_data.preferred_keyboard):
+                return self.config_data.preferred_keyboard
+        return self.active_adapter_id
+
+    def _refresh_keyboard_choices(self) -> list[str]:
+        labels = {AUTO_DETECT_LABEL: "auto"}
+        for adapter in self.registry.definitions():
+            labels[adapter.display_name] = adapter.adapter_id
+        for device in self.registry.enumerate_devices():
+            labels[device.display_name] = device.selection_id
+        self._adapter_labels = labels
+        return [AUTO_DETECT_LABEL, *sorted(labels.keys() - {AUTO_DETECT_LABEL})]
 
     def _preferred_label(self) -> str:
         if self.config_data.preferred_keyboard == "auto":
             return AUTO_DETECT_LABEL
+        for label, selection_id in self._adapter_labels.items():
+            if selection_id == self.config_data.preferred_keyboard:
+                return label
         adapter = self.registry.adapter_type(self.config_data.preferred_keyboard)
         return adapter.display_name if adapter else AUTO_DETECT_LABEL
 
@@ -184,7 +201,7 @@ class MapperWindow(tk.Tk):
             state="readonly",
             width=29,
             textvariable=self.keyboard_choice_var,
-            values=[AUTO_DETECT_LABEL, *sorted(self._adapter_labels.keys() - {AUTO_DETECT_LABEL})],
+            values=self._refresh_keyboard_choices(),
         )
         self.keyboard_choice.pack(pady=(4, 0))
         self.keyboard_choice.bind("<<ComboboxSelected>>", self._keyboard_preference_changed)
@@ -364,15 +381,21 @@ class MapperWindow(tk.Tk):
         )
 
     def _mappings(self) -> dict[str, str]:
-        return self.config_data.mappings_for(self.active_adapter_id)
+        return self.config_data.mappings_for(self.active_settings_id)
 
     def _keyboard_preference_changed(self, _event=None) -> None:
+        if not self._store_current_keyboard_settings():
+            self.keyboard_choice_var.set(self._preferred_label())
+            return
         preferred = self._adapter_labels.get(self.keyboard_choice_var.get(), "auto")
         self.config_data.preferred_keyboard = preferred
         if preferred != "auto":
             adapter = self.registry.adapter_type(preferred)
             if adapter:
                 self.active_adapter_id = adapter.adapter_id
+                self.active_settings_id = preferred
+                self.config_data.apply_settings_for(self.active_settings_id)
+                self._load_current_keyboard_settings()
                 self.keyboard_view.set_layout(adapter.layout)
                 self.keyboard_view.set_mappings(self._mappings())
                 self.select_key(adapter.layout.keys[0].key_id)
