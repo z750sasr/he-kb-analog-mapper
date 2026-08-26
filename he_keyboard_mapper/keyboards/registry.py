@@ -54,6 +54,14 @@ class KeyboardRegistry:
     def definitions(self) -> tuple[type[KeyboardAdapter], ...]:
         return self.adapter_types
 
+    def _create_adapter(self, adapter_type: type[KeyboardAdapter], preferred_id: str = "auto") -> KeyboardAdapter:
+        try:
+            return adapter_type(self.hid_backend, preferred_id=preferred_id)
+        except TypeError as error:
+            if "preferred_id" not in str(error):
+                raise
+            return adapter_type(self.hid_backend)
+
     def adapter_type(self, adapter_id: str) -> type[KeyboardAdapter] | None:
         base_id = adapter_id.split(":", 1)[0]
         return next((item for item in self.adapter_types if item.adapter_id == base_id), None)
@@ -67,7 +75,7 @@ class KeyboardRegistry:
 
         devices: list[KeyboardDeviceDescriptor] = []
         for adapter_type in self.adapter_types:
-            adapter = adapter_type(self.hid_backend)
+            adapter = self._create_adapter(adapter_type)
             try:
                 devices.extend(adapter.enumerate_devices())
             except Exception:
@@ -94,7 +102,7 @@ class KeyboardRegistry:
 
         failures: list[str] = []
         for adapter_type in candidates:
-            adapter = adapter_type(self.hid_backend, preferred_id=preferred_id)
+            adapter = self._create_adapter(adapter_type, preferred_id)
             try:
                 return adapter, adapter.connect()
             except Exception as error:

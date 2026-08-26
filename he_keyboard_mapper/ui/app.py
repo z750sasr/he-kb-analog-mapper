@@ -437,9 +437,40 @@ class MapperWindow(tk.Tk):
         self.keyboard_view.set_mappings(mappings)
 
     def _publish_config(self) -> None:
+        self.config_data.update_settings_for(self.active_settings_id)
         self.config_data.sanitize()
         save_config(self.config_data)
         self.service.update_config(self.config_data)
+
+    def _store_current_keyboard_settings(self) -> bool:
+        try:
+            self.config_data.deadzone_raw = int(self.deadzone_var.get())
+            self.config_data.max_raw = int(self.max_raw_var.get())
+            self.config_data.sensitivity = float(self.sensitivity_var.get())
+            self.config_data.digital_threshold = float(self.threshold_var.get())
+            self.config_data.curve = self.curve_var.get()
+            self.config_data.keyboard_keys_enabled = self.keyboard_keys_var.get()
+            self.config_data.gamepad_mapping_override = self.mapping_override_var.get()
+            self.config_data.update_settings_for(self.active_settings_id)
+            return True
+        except ValueError:
+            messagebox.showerror(
+                "Invalid settings",
+                "Deadzone/full travel must be integers; sensitivity and threshold must be numbers.",
+                parent=self,
+            )
+            return False
+
+    def _load_current_keyboard_settings(self) -> None:
+        settings = self.config_data.settings_for(self.active_settings_id)
+        self.deadzone_var.set(str(settings.deadzone_raw))
+        self.max_raw_var.set(str(settings.max_raw))
+        self.sensitivity_var.set(f"{settings.sensitivity:.2f}")
+        self.threshold_var.set(f"{settings.digital_threshold:.2f}")
+        self.curve_var.set(settings.curve)
+        self.keyboard_keys_var.set(settings.keyboard_keys_enabled)
+        self.mapping_override_var.set(settings.gamepad_mapping_override)
+        self._update_output_capability()
 
     def _output_policy_changed(self) -> None:
         if not self.keyboard_keys_var.get() and self.digital_output_supported:
@@ -522,33 +553,20 @@ class MapperWindow(tk.Tk):
             self.set_status("One or more global shortcuts could not be registered", error=True)
 
     def save_settings(self, silent: bool = False) -> bool:
-        try:
-            self.config_data.deadzone_raw = int(self.deadzone_var.get())
-            self.config_data.max_raw = int(self.max_raw_var.get())
-            self.config_data.sensitivity = float(self.sensitivity_var.get())
-            self.config_data.digital_threshold = float(self.threshold_var.get())
-            self.config_data.curve = self.curve_var.get()
-            self.config_data.keyboard_keys_enabled = self.keyboard_keys_var.get()
-            self.config_data.gamepad_mapping_override = self.mapping_override_var.get()
-            self.config_data.auto_start = self.auto_start_var.get()
-            self.config_data.start_minimized = self.start_minimized_var.get()
-            self.config_data.start_stop_hotkey = self.start_stop_hotkey_var.get()
-            self.config_data.exit_hotkey = self.exit_hotkey_var.get()
-            self._publish_config()
-            self.start_stop_hotkey_var.set(self.config_data.start_stop_hotkey)
-            self.exit_hotkey_var.set(self.config_data.exit_hotkey)
-            if not self._recording_hotkey:
-                self._apply_hotkeys()
-            if not silent:
-                self.set_status("Settings saved")
-            return True
-        except ValueError:
-            messagebox.showerror(
-                "Invalid settings",
-                "Deadzone/full travel must be integers; sensitivity and threshold must be numbers.",
-                parent=self,
-            )
+        if not self._store_current_keyboard_settings():
             return False
+        self.config_data.auto_start = self.auto_start_var.get()
+        self.config_data.start_minimized = self.start_minimized_var.get()
+        self.config_data.start_stop_hotkey = self.start_stop_hotkey_var.get()
+        self.config_data.exit_hotkey = self.exit_hotkey_var.get()
+        self._publish_config()
+        self.start_stop_hotkey_var.set(self.config_data.start_stop_hotkey)
+        self.exit_hotkey_var.set(self.config_data.exit_hotkey)
+        if not self._recording_hotkey:
+            self._apply_hotkeys()
+        if not silent:
+            self.set_status("Settings saved")
+        return True
 
     def start_mapping(self) -> None:
         if not self.save_settings(silent=True):
@@ -600,6 +618,8 @@ class MapperWindow(tk.Tk):
 
     def _handle_service_event(self, event: ServiceEvent) -> None:
         if event.kind == "travel" and event.physical_index is not None and event.value is not None:
+            if event.device_id and event.device_id != self.active_settings_id:
+                return
             if event.keyboard_id and event.keyboard_id != self.active_adapter_id:
                 return
             value = max(0.0, min(1.0, event.value))
@@ -610,10 +630,13 @@ class MapperWindow(tk.Tk):
             adapter = self.registry.adapter_type(event.keyboard_id)
             if adapter:
                 self.active_adapter_id = event.keyboard_id
+                self.active_settings_id = event.device_id or event.keyboard_id
+                self.config_data.apply_settings_for(self.active_settings_id)
+                self._load_current_keyboard_settings()
                 self.keyboard_view.set_layout(adapter.layout)
                 self.keyboard_view.set_mappings(self._mappings())
                 self.select_key(adapter.layout.keys[0].key_id)
-            display_name = event.keyboard_name or (
+            display_name = event.device_name or event.keyboard_name or (
                 adapter.display_name if adapter else event.keyboard_id
             )
             self.device_var.set(display_name)
