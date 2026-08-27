@@ -64,7 +64,7 @@ class ControllerActionGrid(ttk.Frame):
                 compound="top",
                 style="ControllerIcon.TButton",
                 command=lambda value=action.value: self.select(value, notify=True),
-                takefocus=True,
+                takefocus=False,
             )
             button.grid(
                 row=index // self.columns,

@@ -200,13 +200,13 @@ class AE64ProtocolTests(unittest.TestCase):
         protocol.prepare_stream()
         protocol._poll()  # Establish an idle baseline without 64 zero events.
         self.assertIsNone(protocol.read_event(0))
-        backend.handle.rows[2][1] = 1234  # Physical Q, key id 15.
+        backend.handle.rows[2][2] = 1234  # Physical Q, key id 15, after the wide Tab slot.
         protocol._poll()
         pressed = protocol.read_event(0)
         self.assertIsNotNone(pressed)
         assert pressed is not None
         self.assertEqual((pressed.key_id, pressed.raw_value, pressed.status), (15, 1234, 1))
-        backend.handle.rows[2][1] = 0
+        backend.handle.rows[2][2] = 0
         protocol._poll()
         released = protocol.read_event(0)
         self.assertIsNotNone(released)

@@ -26,15 +26,13 @@ class ToggleSwitch(tk.Canvas):
             background=SURFACE,
             highlightthickness=0,
             cursor="hand2",
-            takefocus=True,
+            takefocus=False,
             **kwargs,
         )
         self.variable = variable
         self.command = command
         self.enabled = True
         self.bind("<Button-1>", self._toggle)
-        self.bind("<space>", self._toggle)
-        self.bind("<Return>", self._toggle)
         self.variable.trace_add("write", lambda *_: self.redraw())
         self.redraw()
 

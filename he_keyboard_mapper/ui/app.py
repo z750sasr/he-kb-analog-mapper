@@ -28,6 +28,7 @@ from .widgets import ToggleSetting
 
 
 AUTO_DETECT_LABEL = "Auto detect"
+UI_EVENT_POLL_MS = 16
 
 
 class MapperWindow(tk.Tk):
@@ -86,11 +87,13 @@ class MapperWindow(tk.Tk):
 
         configure_styles(self)
         self._build_ui(initial_layout)
+        self._install_mouse_first_keyboard_guards()
+        self._apply_mouse_first_focus(self)
         self.select_key(self.selected_key_id)
         self._update_output_capability()
         self._apply_hotkeys()
         self.tray.start()
-        self.after(50, self._poll_service_events)
+        self.after(UI_EVENT_POLL_MS, self._poll_service_events)
 
         if self.config_data.auto_start:
             self.after(250, self.start_mapping)
@@ -222,6 +225,7 @@ class MapperWindow(tk.Tk):
             textvariable=self.keyboard_choice_var,
             values=self._refresh_keyboard_choices(),
             postcommand=self._refresh_keyboard_dropdown,
+            takefocus=False,
         )
         self.keyboard_choice.pack(pady=(4, 0))
         self.keyboard_choice.bind("<<ComboboxSelected>>", self._keyboard_preference_changed)
@@ -271,10 +275,10 @@ class MapperWindow(tk.Tk):
             sticky="w",
             pady=(0, 12),
         )
-        self._setting_row(panel, 1, "Raw deadzone", self.deadzone_var)
-        self._setting_row(panel, 2, "Raw full travel", self.max_raw_var)
-        self._setting_row(panel, 3, "Sensitivity", self.sensitivity_var)
-        self._setting_row(panel, 4, "Button threshold", self.threshold_var)
+        self._setting_row(panel, 1, "Raw deadzone", self.deadzone_var, "int")
+        self._setting_row(panel, 2, "Raw full travel", self.max_raw_var, "int")
+        self._setting_row(panel, 3, "Sensitivity", self.sensitivity_var, "float")
+        self._setting_row(panel, 4, "Button threshold", self.threshold_var, "float")
         ttk.Label(
             panel,
             text=(
@@ -297,22 +301,26 @@ class MapperWindow(tk.Tk):
             textvariable=self.curve_var,
             values=("linear", "gentle", "s_curve", "fast"),
             width=16,
+            takefocus=False,
         ).grid(row=6, column=1, sticky="ew", pady=6)
         ttk.Checkbutton(
             panel,
             text="Start mapping when the app opens",
             variable=self.auto_start_var,
+            takefocus=False,
         ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(12, 3))
         ttk.Checkbutton(
             panel,
             text="Open minimized to the tray",
             variable=self.start_minimized_var,
+            takefocus=False,
         ).grid(row=8, column=0, columnspan=2, sticky="w", pady=3)
         ttk.Button(
             panel,
             text="Save settings",
             style="Primary.TButton",
             command=self.save_settings,
+            takefocus=False,
         ).grid(row=9, column=0, columnspan=2, sticky="ew", pady=(16, 0))
         ttk.Label(
             panel,
@@ -417,20 +425,72 @@ class MapperWindow(tk.Tk):
         )
         self.exit_hotkey_recorder.pack(fill="x")
 
-    @staticmethod
-    def _setting_row(parent, row: int, label: str, variable: tk.StringVar) -> None:
+    def _setting_row(
+        self,
+        parent,
+        row: int,
+        label: str,
+        variable: tk.StringVar,
+        value_type: str,
+    ) -> None:
         ttk.Label(parent, text=label, style="SurfaceMuted.TLabel").grid(
             row=row,
             column=0,
             sticky="w",
             pady=6,
         )
-        ttk.Entry(parent, textvariable=variable, width=18).grid(
+        validator = self.register(lambda proposed, kind=value_type: self._validate_number(proposed, kind))
+        ttk.Entry(
+            parent,
+            textvariable=variable,
+            width=18,
+            validate="key",
+            validatecommand=(validator, "%P"),
+        ).grid(
             row=row,
             column=1,
             sticky="ew",
             pady=6,
         )
+
+    @staticmethod
+    def _validate_number(proposed: str, value_type: str) -> bool:
+        """Allow only the number shape expected by each settings field."""
+
+        if proposed == "":
+            return True
+        if value_type == "int":
+            return proposed.isdigit()
+        if value_type == "float":
+            if proposed == ".":
+                return True
+            return proposed.count(".") <= 1 and all(char.isdigit() or char == "." for char in proposed)
+        return True
+
+    def _install_mouse_first_keyboard_guards(self) -> None:
+        """Stop accidental Tab/Space focus activation in the settings window."""
+
+        self.bind_all("<Tab>", self._block_focus_keyboard_activation, add="+")
+        self.bind_all("<ISO_Left_Tab>", self._block_focus_keyboard_activation, add="+")
+        self.bind_all("<space>", self._block_focus_keyboard_activation, add="+")
+
+    def _block_focus_keyboard_activation(self, _event) -> str | None:
+        # Hotkey recording intentionally listens to physical key combinations;
+        # do not interfere with that temporary capture window.
+        if self._recording_hotkey:
+            return None
+        return "break"
+
+    def _apply_mouse_first_focus(self, widget: tk.Misc) -> None:
+        """Keep controls clickable but remove keyboard focus from non-text widgets."""
+
+        for child in widget.winfo_children():
+            if not isinstance(child, (tk.Entry, ttk.Entry)):
+                try:
+                    child.configure(takefocus=False)
+                except tk.TclError:
+                    pass
+            self._apply_mouse_first_focus(child)
 
     def _keyboard_inventory(self) -> list[tuple[str, str, bool]]:
         """Return known physical keyboards as ``(selection_id, label, connected)`` rows."""
@@ -826,7 +886,7 @@ class MapperWindow(tk.Tk):
             pass
         for event in latest_travel.values():
             self._handle_service_event(event)
-        self.after(50, self._poll_service_events)
+        self.after(UI_EVENT_POLL_MS, self._poll_service_events)
 
     def _handle_service_event(self, event: ServiceEvent) -> None:
         if event.kind == "travel" and event.physical_index is not None and event.value is not None:

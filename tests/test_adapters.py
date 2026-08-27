@@ -122,7 +122,10 @@ class AdapterFrameworkTests(unittest.TestCase):
     def test_ae64_layout_preserves_the_64_key_firmware_matrix(self) -> None:
         self.assertEqual(len(AE64_LAYOUT.keys), 64)
         self.assertEqual(KEY_ID_BY_POSITION[(1, 0)], 0)  # Esc
-        self.assertEqual(KEY_ID_BY_POSITION[(5, 8)], 63)  # Right arrow
+        self.assertEqual(KEY_ID_BY_POSITION[(4, 2)], 42)  # Z, after the 2u left Shift
+        self.assertEqual(KEY_ID_BY_POSITION[(4, 3)], 43)  # X, after Z
+        self.assertEqual(KEY_ID_BY_POSITION[(3, 13)], 40)  # Enter, after the wide Caps row
+        self.assertEqual(KEY_ID_BY_POSITION[(5, 14)], 63)  # Right arrow
 
     def test_ae64_adapter_is_discovered_without_a_central_registry_edit(self) -> None:
         adapter_type = KeyboardRegistry().adapter_type("everglide_ae64pro")
