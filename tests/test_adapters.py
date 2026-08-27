@@ -5,12 +5,14 @@ import unittest
 from he_keyboard_mapper.keyboards import (
     KeyboardAdapter,
     KeyboardCapabilities,
+    KeyboardDeviceDescriptor,
     KeyboardIdentity,
     KeyboardKey,
     KeyboardLayout,
     KeyboardRegistry,
     TravelCalibration,
 )
+from he_keyboard_mapper.keyboards.base import device_selection_id
 from he_keyboard_mapper.keyboards.base import KeyboardUnavailable
 from he_keyboard_mapper.keyboards.he30.adapter import HE30Adapter
 from he_keyboard_mapper.keyboards.everglide_ae64pro.adapter import EverglideAE64ProAdapter
@@ -56,6 +58,29 @@ class PresentAdapter(MissingAdapter):
         return KeyboardIdentity(self.adapter_id, self.display_name, self.layout.layout_id)
 
 
+class DeviceListAdapter(PresentAdapter):
+    adapter_id = "device_list"
+    display_name = "Device list keyboard"
+
+    def enumerate_devices(self):
+        first = {"path": b"same-model-1"}
+        second = {"path": b"same-model-2"}
+        return (
+            KeyboardDeviceDescriptor(
+                self.adapter_id,
+                device_selection_id(self.adapter_id, first),
+                "Device list keyboard #1",
+                self.layout.layout_id,
+            ),
+            KeyboardDeviceDescriptor(
+                self.adapter_id,
+                device_selection_id(self.adapter_id, second),
+                "Device list keyboard #2",
+                self.layout.layout_id,
+            ),
+        )
+
+
 class AdapterFrameworkTests(unittest.TestCase):
     def test_layout_rejects_duplicate_key_ids(self) -> None:
         with self.assertRaises(ValueError):
@@ -70,6 +95,13 @@ class AdapterFrameworkTests(unittest.TestCase):
         adapter, identity = registry.connect()
         self.assertIsInstance(adapter, PresentAdapter)
         self.assertEqual(identity.adapter_id, "present")
+
+    def test_registry_lists_distinct_physical_devices_for_same_model(self) -> None:
+        registry = KeyboardRegistry((DeviceListAdapter,))
+        devices = registry.enumerate_devices()
+        self.assertEqual(len(devices), 2)
+        self.assertNotEqual(devices[0].selection_id, devices[1].selection_id)
+        self.assertTrue(devices[0].selection_id.startswith("device_list:"))
 
     def test_preferred_adapter_does_not_probe_other_brands(self) -> None:
         registry = KeyboardRegistry((MissingAdapter, PresentAdapter))

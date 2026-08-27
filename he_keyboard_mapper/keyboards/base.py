@@ -204,6 +204,11 @@ class KeyboardAdapter(ABC):
         del policy, bound_key_ids
         return False, f"{self.display_name} does not expose digital-output control through this adapter."
 
+    def diagnostics(self) -> dict[str, int | str | bool]:
+        """Return optional adapter-specific counters for status messages."""
+
+        return {}
+
     @abstractmethod
     def close(self) -> None:
         """Restore temporary device state and close the transport."""

@@ -37,6 +37,18 @@ class EverglideAE64ProAdapter(KeyboardAdapter):
         devices: list[KeyboardDeviceDescriptor] = []
         for info in self.protocol.enumerate_candidates():
             selection_id = device_selection_id(self.adapter_id, info)
+            probe = AE64Protocol(
+                hid_backend=self.hid_backend,
+                timeout_ms=120,
+                preferred_id=selection_id,
+            )
+            try:
+                info = probe.connect()
+            except Exception:
+                continue
+            finally:
+                probe.close()
+            selection_id = device_selection_id(self.adapter_id, info)
             model_name = AE64_MODELS.get(
                 (int(info.get("vendor_id", 0)), int(info.get("product_id", 0))),
                 self.display_name,

@@ -81,12 +81,4 @@ DIGITAL_BUTTON_ENUMS = {
     "dpad_right": "XUSB_GAMEPAD_DPAD_RIGHT",
 }
 
-DEFAULT_MAPPINGS = {
-    "8": "left_trigger",       # Q
-    "9": "left_stick_up",     # W
-    "10": "right_trigger",    # E
-    "14": "left_stick_left",  # A
-    "15": "left_stick_down",  # S
-    "16": "left_stick_right", # D
-    "28": "button_a",         # Space
-}
+DEFAULT_MAPPINGS: dict[str, str] = {}

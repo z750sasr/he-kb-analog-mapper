@@ -203,9 +203,9 @@ class HE30Protocol:
             raise HE30Error("Keyboard is not connected.")
         timeout = self.timeout_ms if timeout_ms is None else timeout_ms
         try:
-            return _normalise_report(self.device.read(REPORT_SIZE, timeout))
+            return _normalise_report(self.device.read(REPORT_SIZE + 1, timeout))
         except TypeError:  # Compatibility with older hidapi Python wrappers.
-            return _normalise_report(self.device.read(REPORT_SIZE))
+            return _normalise_report(self.device.read(REPORT_SIZE + 1))
 
     def _write_report(self, payload: list[int]) -> None:
         if self.device is None:

@@ -47,6 +47,11 @@ The protocol should:
 4. resolve each report to the stable key ID from `layout.py`;
 5. restore every temporary device setting in `close()`.
 
+When `preferred_id` contains a physical-device suffix such as
+`brand_model:ABCDEF12`, filter candidates to that exact HID path. Use
+`device_selection_id(adapter_id, info)` from `keyboards.base` so same-model
+selection works consistently across adapters.
+
 Keep bootloader, updater, and firmware-flashing IDs out of the adapter.
 
 ## 3. `adapter.py` — small glue layer and travel conversion
@@ -55,7 +60,7 @@ Subclass `KeyboardAdapter`, delegate USB work to the protocol, and convert the
 keyboard's raw Hall unit:
 
 ```python
-from ..base import KeyboardAdapter, KeyTravelEvent
+from ..base import KeyboardAdapter, KeyboardDeviceDescriptor, KeyTravelEvent, device_fingerprint, device_selection_id
 from .layout import LAYOUT
 from .protocol import BrandProtocol
 
@@ -64,6 +69,25 @@ class BrandAdapter(KeyboardAdapter):
     display_name = "Brand Model"
     layout = LAYOUT
 
+    def __init__(self, hid_backend=None, preferred_id="auto"):
+        super().__init__(hid_backend, preferred_id)
+        self.protocol = BrandProtocol(hid_backend, preferred_id=preferred_id)
+
+    def enumerate_devices(self):
+        devices = []
+        for info in self.protocol.enumerate_candidates():
+            selection_id = device_selection_id(self.adapter_id, info)
+            fingerprint = device_fingerprint(info)
+            devices.append(
+                KeyboardDeviceDescriptor(
+                    self.adapter_id,
+                    selection_id,
+                    f"{self.display_name} #{fingerprint}",
+                    self.layout.layout_id,
+                )
+            )
+        return tuple(devices)
+
     def normalize_travel(self, raw_value, calibration):
         if raw_value <= calibration.deadzone_raw:
             return 0.0
@@ -71,6 +95,7 @@ class BrandAdapter(KeyboardAdapter):
         return min(1.0, (raw_value - calibration.deadzone_raw) / span)
 
     # connect(), prepare(), read_event(), and close() delegate to BrandProtocol.
+    # connect() should include device_id=selection_id in KeyboardIdentity.
 
 ADAPTER_CLASS = BrandAdapter
 ```
@@ -78,6 +103,10 @@ ADAPTER_CLASS = BrandAdapter
 `ADAPTER_CLASS` is the registration point. The registry imports it at startup,
 orders adapters by `priority`, and probes them until one connects. No central
 device list needs to be edited.
+
+The application stores mappings and response settings by `KeyboardIdentity`'s
+`device_id` when present. If a keyboard does not provide one, settings fall back
+to the adapter ID, which means all copies of that model share one settings set.
 
 ## Optional capabilities
 

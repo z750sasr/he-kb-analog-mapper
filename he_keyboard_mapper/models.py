@@ -57,6 +57,7 @@ class KeyboardSettings:
     digital_threshold: float = 0.45
     keyboard_keys_enabled: bool = True
     gamepad_mapping_override: bool = False
+    controller_enabled: bool = True
 
     @classmethod
     def from_dict(cls, value: dict[str, Any] | None) -> "KeyboardSettings":
@@ -71,6 +72,7 @@ class KeyboardSettings:
             digital_threshold=value.get("digital_threshold", 0.45),
             keyboard_keys_enabled=value.get("keyboard_keys_enabled", True),
             gamepad_mapping_override=value.get("gamepad_mapping_override", False),
+            controller_enabled=value.get("controller_enabled", True),
         ).sanitize()
 
     def sanitize(self) -> "KeyboardSettings":
@@ -82,6 +84,7 @@ class KeyboardSettings:
         self.digital_threshold = max(0.05, min(1.0, float(self.digital_threshold)))
         self.keyboard_keys_enabled = bool(self.keyboard_keys_enabled)
         self.gamepad_mapping_override = bool(self.gamepad_mapping_override)
+        self.controller_enabled = bool(self.controller_enabled)
         return self
 
 
@@ -89,8 +92,9 @@ class KeyboardSettings:
 class MapperConfig:
     """Versioned user configuration persisted under Windows AppData."""
 
-    version: int = 4
+    version: int = 5
     preferred_keyboard: str = "auto"
+    known_keyboards: dict[str, str] = field(default_factory=dict)
     mappings: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_MAPPINGS))
     keyboard_mappings: dict[str, dict[str, str]] = field(default_factory=dict)
     keyboard_settings: dict[str, KeyboardSettings] = field(default_factory=dict)
@@ -122,8 +126,16 @@ class MapperConfig:
     def sanitize(self) -> "MapperConfig":
         """Clamp untrusted JSON values and remove unknown mapping actions."""
 
-        self.version = 4
+        self.version = 5
         self.preferred_keyboard = str(self.preferred_keyboard or "auto").strip() or "auto"
+        self.known_keyboards = {
+            str(keyboard_id): str(label)
+            for keyboard_id, label in self.known_keyboards.items()
+            if isinstance(keyboard_id, str)
+            and keyboard_id.strip()
+            and isinstance(label, str)
+            and label.strip()
+        }
         self.deadzone_raw = max(0, min(5000, int(self.deadzone_raw)))
         self.max_raw = max(self.deadzone_raw + 1, min(10000, int(self.max_raw)))
         self.sensitivity = max(0.1, min(3.0, float(self.sensitivity)))
@@ -172,6 +184,7 @@ class MapperConfig:
             digital_threshold=self.digital_threshold,
             keyboard_keys_enabled=self.keyboard_keys_enabled,
             gamepad_mapping_override=self.gamepad_mapping_override,
+            controller_enabled=True,
         ).sanitize()
 
     def mappings_for(self, adapter_id: str) -> dict[str, str]:
@@ -204,6 +217,32 @@ class MapperConfig:
         self.keyboard_mappings[key] = settings.mappings
         return settings
 
+    def remember_keyboard(self, keyboard_id: str, display_name: str) -> None:
+        """Persist a friendly label for one physical keyboard instance.
+
+        This lets the UI manage a keyboard's saved data even after that board is
+        unplugged. The hardware-specific id remains the source of truth; the
+        label is only for humans.
+        """
+
+        key = str(keyboard_id or "").strip()
+        label = str(display_name or "").strip()
+        if key and label:
+            self.known_keyboards[key] = label
+            self.settings_for(key)
+
+    def forget_keyboard(self, keyboard_id: str) -> None:
+        """Remove all saved state for one registered physical keyboard."""
+
+        key = str(keyboard_id or "").strip()
+        if not key:
+            return
+        self.known_keyboards.pop(key, None)
+        self.keyboard_settings.pop(key, None)
+        self.keyboard_mappings.pop(key, None)
+        if self.preferred_keyboard == key:
+            self.preferred_keyboard = "auto"
+
     def apply_settings_for(self, keyboard_id: str) -> "MapperConfig":
         """Load one keyboard's bucket into legacy fields used by the engine/UI."""
 
@@ -230,6 +269,7 @@ class MapperConfig:
             digital_threshold=self.digital_threshold,
             keyboard_keys_enabled=self.keyboard_keys_enabled,
             gamepad_mapping_override=self.gamepad_mapping_override,
+            controller_enabled=self.settings_for(keyboard_id).controller_enabled,
         ).sanitize()
         key = str(keyboard_id or "epomaker_he30")
         self.keyboard_settings[key] = settings
@@ -246,6 +286,7 @@ class MapperConfig:
         config = cls(
             version=value.get("version", 1),
             preferred_keyboard=value.get("preferred_keyboard", settings.get("preferred_keyboard", "auto")),
+            known_keyboards=dict(value.get("known_keyboards", {})),
             mappings=dict(value.get("mappings", DEFAULT_MAPPINGS)),
             keyboard_mappings=dict(value.get("keyboard_mappings", {})),
             keyboard_settings=dict(value.get("keyboard_settings", {})),

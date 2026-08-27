@@ -13,6 +13,10 @@ tray, or user interface.
 ## Features
 
 - Automatic detection across installed keyboard adapters.
+- Controller mode starts only after a supported keyboard is recognized. Windows
+  will not see a virtual controller while the app is merely waiting for a board.
+- Local multiplayer mode: every enabled, recognized physical keyboard gets its
+  own virtual Xbox controller.
 - Proportional keyboard visualization derived from the HE30 web driver:
   controller mapping as the primary label, physical key as the secondary label,
   selection glow, mapped-key marker, and live Hall-travel fill.
@@ -22,7 +26,8 @@ tray, or user interface.
   corrected Menu/Guide action) plus a text-only Unassigned action.
 - Optional global shortcuts to start/stop mapping or completely exit the app
   while its window is hidden.
-- Separate mapping sets for each keyboard adapter.
+- Separate mapping, response, and controller-enable settings for each keyboard.
+  Multiple copies of the same model are shown as distinct device choices.
 - Linear, gentle, S-curve, and fast response curves.
 - Configurable raw deadzone, full-travel value, sensitivity, and digital-button
   threshold.
@@ -30,6 +35,8 @@ tray, or user interface.
   policy controls, applied only by adapters that safely support them.
 - Automatic reconnect, safe temporary-state restoration, and background tray
   operation.
+- Single-instance safeguard: launching a second copy shows a popup and exits,
+  preventing duplicate virtual controllers and competing HID readers.
 - Per-user configuration in `%APPDATA%\HallAnalogMapper\config.json`.
 - Migration from the previous `%APPDATA%\HE30AnalogMapper\config.json`.
 
@@ -85,20 +92,28 @@ python -m venv .venv
 
 On first launch:
 
-1. Leave **Device adapter** on **Auto detect**.
+1. Use **Keyboard to edit** to choose which keyboard's layout/settings are on
+   screen. The dropdown lists physical keyboards, not generic model families.
 2. Select a physical key on the visual keyboard.
 3. Choose its Xbox controller output.
 4. Adjust response settings if needed.
-5. Press **Start**.
-6. Close the window to continue mapping from the notification area.
+5. Open **Devices** and enable controller mode for each keyboard that should
+   create a virtual Xbox controller.
+6. Press **Start**.
+7. Close the window to continue mapping from the notification area.
 
-The default HE30 mapping assigns `W/A/S/D` to the left stick, `Q/E` to LT/RT,
-and Space to Xbox A.
+New installs and factory resets start with no controller bindings. This avoids
+confusing old sample mappings with user-created keyboard data.
 
 The main window uses a fixed keyboard-and-sidebar layout: select a physical key
 on the left, then assign it from the Mapping tab on the right. Response,
 keyboard-output, and shortcut settings swap in the same sidebar, so key mapping
 does not require scrolling away from the keyboard.
+
+The device suffix is a short fingerprint of Windows' HID path. It separates
+two identical keyboards while avoiding long USB path text in the UI. If Windows
+assigns a different HID path after moving the keyboard to another USB port, the
+app may treat it as a new physical device.
 
 **Button threshold** applies only to digital controller actions. At `0.45`, a
 mapped face button, bumper, D-pad direction, Start/Back, Menu/Guide, or stick
@@ -115,7 +130,33 @@ applied before the threshold comparison.
 - Stopping releases all virtual controls and asks the active adapter to restore
   every temporary keyboard setting.
 - Disconnecting a keyboard resets controller output and resumes auto detection.
+- The **Devices** tab controls multiplayer explicitly: each connected keyboard
+  with **Enable controller** checked becomes one virtual Xbox controller.
+- **Factory reset everything** removes every saved keyboard, profile, mapping,
+  response setting, and shortcut. **Delete data** removes only one registered
+  keyboard, even if that keyboard is currently unplugged.
+- If another copy is already running in the tray, a new launch displays an
+  “already running” popup and exits instead of creating another virtual
+  controller set.
 - `--headless` runs the same registry/service pipeline without the window.
+
+## Travel reporting
+
+The two built-in keyboards expose analog travel in different ways.
+
+**EPOMAKER HE30** is event-driven. After the app temporarily enables the
+keyboard's Dynamic Display telemetry flag, the keyboard pushes `0xA0` reports
+when a key's Hall travel changes. Each report carries one key's current mapping
+triplet plus its raw travel distance. When several keys are pressed, the
+firmware sends several individual reports over time. The app reads the keyboard
+mapping banks so it can reverse that mapping triplet back to the physical key.
+
+**Everglide AE64 Pro** is row-polled. The app sends the captured
+`04 03 01 <row>` read request for each physical row. Each reply contains many
+little-endian 16-bit travel values for that row, in thousandths of a millimetre.
+When several keys are pressed, their values arrive together inside the row
+reply. The adapter compares each scan with the previous scan and emits one
+changed key event per changed physical key, including releases to zero.
 
 ## Adding another keyboard
 
@@ -164,8 +205,10 @@ and XInput reports.
 
 ## Performance design
 
-- HID reading and controller output run on a dedicated worker thread; Tk drawing
-  and tray interaction stay on the main UI thread.
+- HID reading and controller output run on one dedicated mapper worker thread;
+  Tk drawing stays on the main UI thread. The notification-area icon runs on a
+  small tray thread, and global shortcuts use one Windows message-pump thread
+  only when shortcuts are assigned.
 - Settings are cloned only when the user changes them. The report loop reads a
   versioned snapshot instead of serializing the whole config per Hall sample.
 - High-rate telemetry remains full speed for controller output, while UI samples
@@ -173,6 +216,25 @@ and XInput reports.
 - Controller reports are skipped when the computed XInput state is unchanged.
 - The interface has no vertically scrolling application canvas; the keyboard is
   fixed and settings switch through a responsive sidebar.
+
+HE30 input is event-driven. The app enables the keyboard's Dynamic Display
+telemetry, then waits for firmware `0xA0` Hall reports. It does not choose a
+fixed HE30 polling rate; each keyboard session updates its controller once for
+every changed key report that arrives.
+
+AE64 Pro input is row-polled because that keyboard exposes Hall route data
+through read replies instead of asynchronous reports. The adapter waits at least
+8 ms after each five-row scan, so the practical scan rate is roughly
+`1000 / (scan time + 8 ms)`. On the test machine with the keyboard attached,
+one five-row scan measured around 12 ms before the idle delay, or about 50 Hz.
+Lower HID latency can push that closer to the 80-125 Hz range.
+
+Virtual Xbox reports are also change-driven. A report is sent to Windows only
+when the computed controller state changes, so idle keys produce no repeated
+ViGEm updates. In multiplayer mode, each keyboard session owns its own mapping
+engine and virtual-controller instance. UI travel drawing is coalesced every
+50 ms and Canvas redraws are batched to about display rate; controller output is
+not slowed by the UI.
 
 The app deliberately leaves processor affinity under the Windows scheduler.
 Pinning a lightweight, mostly I/O-bound process away from cores 0/1 usually adds

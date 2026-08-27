@@ -38,10 +38,25 @@ class HE30Adapter(KeyboardAdapter):
         super().__init__(hid_backend, preferred_id)
         self.protocol = HE30Protocol(hid_backend=hid_backend, preferred_id=self.preferred_id)
         self.identity: KeyboardIdentity | None = None
+        self.telemetry_reports = 0
+        self.profile_reports = 0
+        self.unresolved_reports = 0
 
     def enumerate_devices(self) -> tuple[KeyboardDeviceDescriptor, ...]:
         devices: list[KeyboardDeviceDescriptor] = []
         for info in self.protocol.enumerate_candidates():
+            selection_id = device_selection_id(self.adapter_id, info)
+            probe = HE30Protocol(
+                hid_backend=self.hid_backend,
+                timeout_ms=120,
+                preferred_id=selection_id,
+            )
+            try:
+                info = probe.connect()
+            except Exception:
+                continue
+            finally:
+                probe.close()
             selection_id = device_selection_id(self.adapter_id, info)
             model_name = HE30_MODELS.get(
                 (int(info.get("vendor_id", 0)), int(info.get("product_id", 0))),
@@ -91,11 +106,14 @@ class HE30Adapter(KeyboardAdapter):
     def read_event(self, timeout_ms: int = 100) -> KeyTravelEvent | LayerChangeEvent | None:
         event = self.protocol.read_event(timeout_ms)
         if isinstance(event, ProfileChangeEvent):
+            self.profile_reports += 1
             return LayerChangeEvent(event.profile_index, event.layer, event.global_layer)
         if not isinstance(event, TelemetryEvent):
             return None
+        self.telemetry_reports += 1
         key_id = self.protocol.resolve_physical(event)
         if key_id is None:
+            self.unresolved_reports += 1
             return None
         return KeyTravelEvent(key_id=key_id, raw_value=event.raw_travel, status=event.status)
 
@@ -121,6 +139,15 @@ class HE30Adapter(KeyboardAdapter):
             "Its Hall report contains the current mapping instead of a physical sensor id, "
             "so unmapping keys would also make analog keys indistinguishable.",
         )
+
+    def diagnostics(self) -> dict[str, int | str | bool]:
+        return {
+            "telemetry_reports": self.telemetry_reports,
+            "profile_reports": self.profile_reports,
+            "unresolved_reports": self.unresolved_reports,
+            "active_profile": self.protocol.active_profile,
+            "active_layer": self.protocol.active_layer,
+        }
 
     def close(self) -> None:
         self.protocol.close()

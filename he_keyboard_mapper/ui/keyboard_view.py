@@ -68,6 +68,12 @@ class KeyboardView(tk.Canvas):
         # rebuilds during a single Tk event-loop cycle.
         self._schedule_redraw()
 
+    def clear_travel(self) -> None:
+        """Remove every live pressure indicator from the visual keyboard."""
+
+        self.travel.clear()
+        self._schedule_redraw()
+
     def _schedule_redraw(self, _event=None) -> None:
         if self._redraw_job is None:
             self._redraw_job = self.after(16, self.redraw)

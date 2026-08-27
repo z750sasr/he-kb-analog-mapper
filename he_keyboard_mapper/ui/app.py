@@ -55,6 +55,10 @@ class MapperWindow(tk.Tk):
         self._recording_hotkey = False
 
         self._adapter_labels: dict[str, str] = {}
+        self._connected_selection_ids: set[str] = set()
+        self._device_enabled_vars: dict[str, tk.BooleanVar] = {}
+        self._device_rows_frame: ttk.Frame | None = None
+        self._device_status_var = tk.StringVar(value="")
         self._refresh_keyboard_choices()
         self.active_adapter_id = self._initial_adapter_id()
         self.active_settings_id = self._initial_settings_id()
@@ -107,10 +111,17 @@ class MapperWindow(tk.Tk):
 
     def _refresh_keyboard_choices(self) -> list[str]:
         labels = {AUTO_DETECT_LABEL: "auto"}
-        for adapter in self.registry.definitions():
-            labels[adapter.display_name] = adapter.adapter_id
+        self._connected_selection_ids.clear()
         for device in self.registry.enumerate_devices():
+            self.config_data.remember_keyboard(device.selection_id, device.display_name)
+            self._connected_selection_ids.add(device.selection_id)
             labels[device.display_name] = device.selection_id
+        for selection_id, display_name in sorted(self.config_data.known_keyboards.items()):
+            if selection_id in labels.values():
+                continue
+            if not self.registry.adapter_type(selection_id):
+                continue
+            labels[f"{display_name} (disconnected)"] = selection_id
         self._adapter_labels = labels
         return [AUTO_DETECT_LABEL, *sorted(labels.keys() - {AUTO_DETECT_LABEL})]
 
@@ -122,6 +133,14 @@ class MapperWindow(tk.Tk):
                 return label
         adapter = self.registry.adapter_type(self.config_data.preferred_keyboard)
         return adapter.display_name if adapter else AUTO_DETECT_LABEL
+
+    def _refresh_keyboard_dropdown(self) -> None:
+        current = self.keyboard_choice_var.get()
+        values = self._refresh_keyboard_choices()
+        self.keyboard_choice.configure(values=values)
+        if current not in values:
+            self.keyboard_choice_var.set(self._preferred_label())
+        self._refresh_device_ui()
 
     def _build_ui(self, initial_layout) -> None:
         self._build_header()
@@ -195,13 +214,14 @@ class MapperWindow(tk.Tk):
 
         choice_box = ttk.Frame(heading, style="Surface.TFrame")
         choice_box.pack(side="right")
-        ttk.Label(choice_box, text="DEVICE ADAPTER", style="SurfaceMuted.TLabel").pack(anchor="w")
+        ttk.Label(choice_box, text="KEYBOARD TO EDIT", style="SurfaceMuted.TLabel").pack(anchor="w")
         self.keyboard_choice = ttk.Combobox(
             choice_box,
             state="readonly",
             width=29,
             textvariable=self.keyboard_choice_var,
             values=self._refresh_keyboard_choices(),
+            postcommand=self._refresh_keyboard_dropdown,
         )
         self.keyboard_choice.pack(pady=(4, 0))
         self.keyboard_choice.bind("<<ComboboxSelected>>", self._keyboard_preference_changed)
@@ -216,13 +236,16 @@ class MapperWindow(tk.Tk):
         mapping = ttk.Frame(tabs, style="Surface.TFrame", padding=14)
         response = ttk.Frame(tabs, style="Surface.TFrame", padding=18)
         output = ttk.Frame(tabs, style="Surface.TFrame", padding=18)
+        devices = ttk.Frame(tabs, style="Surface.TFrame", padding=18)
         shortcuts = ttk.Frame(tabs, style="Surface.TFrame", padding=18)
         tabs.add(mapping, text="Mapping")
         tabs.add(response, text="Response")
+        tabs.add(devices, text="Devices")
         tabs.add(output, text="Keyboard")
         tabs.add(shortcuts, text="Shortcuts")
         self._build_mapping_panel(mapping)
         self._build_response_panel(response)
+        self._build_devices_panel(devices)
         self._build_output_panel(output)
         self._build_shortcuts_panel(shortcuts)
 
@@ -333,6 +356,35 @@ class MapperWindow(tk.Tk):
         )
         self.mapping_override_setting.pack(fill="x")
 
+    def _build_devices_panel(self, panel) -> None:
+        ttk.Label(panel, text="Connected controllers", style="SurfaceHeading.TLabel").pack(anchor="w")
+        ttk.Label(
+            panel,
+            text=(
+                "Each enabled keyboard creates its own virtual Xbox controller while mapping is running. "
+                "Disable a board here when you want it to stay as a normal keyboard."
+            ),
+            style="SurfaceMuted.TLabel",
+            wraplength=340,
+            justify="left",
+        ).pack(anchor="w", pady=(4, 14))
+        ttk.Label(panel, textvariable=self._device_status_var, style="SurfaceMuted.TLabel").pack(anchor="w")
+        self._device_rows_frame = ttk.Frame(panel, style="Surface.TFrame")
+        self._device_rows_frame.pack(fill="both", expand=True, pady=(10, 14))
+        actions = ttk.Frame(panel, style="Surface.TFrame")
+        actions.pack(fill="x")
+        ttk.Button(
+            actions,
+            text="Refresh devices",
+            command=self._refresh_device_list,
+        ).pack(side="left")
+        ttk.Button(
+            actions,
+            text="Factory reset everything",
+            command=self.factory_reset,
+        ).pack(side="right")
+        self._refresh_device_ui()
+
     def _build_shortcuts_panel(self, panel) -> None:
         ttk.Label(panel, text="Global app shortcuts", style="SurfaceHeading.TLabel").pack(anchor="w")
         ttk.Label(
@@ -380,6 +432,172 @@ class MapperWindow(tk.Tk):
             pady=6,
         )
 
+    def _keyboard_inventory(self) -> list[tuple[str, str, bool]]:
+        """Return known physical keyboards as ``(selection_id, label, connected)`` rows."""
+
+        rows: list[tuple[str, str, bool]] = []
+        ids = {
+            keyboard_id
+            for keyboard_id in (*self.config_data.known_keyboards.keys(), *self.config_data.keyboard_settings.keys())
+            if ":" in keyboard_id and self.registry.adapter_type(keyboard_id)
+        }
+        for selection_id in sorted(
+            ids,
+            key=lambda item: (
+                0 if item in self._connected_selection_ids else 1,
+                self.config_data.known_keyboards.get(item, item),
+            ),
+        ):
+            label = self.config_data.known_keyboards.get(selection_id, selection_id)
+            rows.append((selection_id, label, selection_id in self._connected_selection_ids))
+        return rows
+
+    def _refresh_device_list(self) -> None:
+        """Probe plugged-in keyboards, then redraw the saved device rows."""
+
+        values = self._refresh_keyboard_choices()
+        self.keyboard_choice.configure(values=values)
+        if self.keyboard_choice_var.get() not in values:
+            self.keyboard_choice_var.set(self._preferred_label())
+        save_config(self.config_data)
+        self.service.update_config(self.config_data)
+        self._refresh_device_ui()
+
+    def _refresh_device_ui(self) -> None:
+        """Rebuild the per-keyboard controller controls from current config/discovery."""
+
+        if self._device_rows_frame is None:
+            return
+        for child in self._device_rows_frame.winfo_children():
+            child.destroy()
+        self._device_enabled_vars.clear()
+
+        rows = self._keyboard_inventory()
+        enabled_connected = 0
+        for row_index, (selection_id, label, connected) in enumerate(rows):
+            settings = self.config_data.settings_for(selection_id)
+            enabled_connected += int(connected and settings.controller_enabled)
+            card = ttk.Frame(self._device_rows_frame, style="Surface.TFrame", padding=(0, 5))
+            card.grid(row=row_index, column=0, sticky="ew", pady=2)
+            card.columnconfigure(1, weight=1)
+            status = "connected" if connected else "not connected"
+            ttk.Label(card, text=label, style="SurfaceHeading.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+            ttk.Label(card, text=status, style="SurfaceMuted.TLabel").grid(row=1, column=0, sticky="w", pady=(1, 0))
+            enabled_var = tk.BooleanVar(value=settings.controller_enabled)
+            self._device_enabled_vars[selection_id] = enabled_var
+            ttk.Checkbutton(
+                card,
+                text="Enable controller",
+                variable=enabled_var,
+                command=lambda item=selection_id, var=enabled_var: self._keyboard_enabled_changed(item, var),
+            ).grid(row=1, column=1, sticky="e", padx=(8, 0))
+            ttk.Button(
+                card,
+                text="Edit",
+                command=lambda item=selection_id: self._select_keyboard_for_editing(item),
+            ).grid(row=0, column=2, rowspan=2, padx=(8, 4), sticky="e")
+            ttk.Button(
+                card,
+                text="Delete data",
+                command=lambda item=selection_id: self.delete_keyboard_data(item),
+            ).grid(row=0, column=3, rowspan=2, sticky="e")
+
+        self._device_rows_frame.columnconfigure(0, weight=1)
+        if rows:
+            label = "controller" if enabled_connected == 1 else "controllers"
+            self._device_status_var.set(f"{enabled_connected} virtual {label} will be enabled from connected keyboards.")
+        else:
+            self._device_status_var.set("No supported keyboards are registered yet. Plug one in, then press Refresh devices.")
+
+    def _select_keyboard_for_editing(self, selection_id: str) -> None:
+        if not self._store_current_keyboard_settings():
+            return
+        adapter = self.registry.adapter_type(selection_id)
+        if adapter is None:
+            return
+        self.active_adapter_id = adapter.adapter_id
+        self.active_settings_id = selection_id
+        self.config_data.preferred_keyboard = selection_id
+        self.config_data.apply_settings_for(self.active_settings_id)
+        self._load_current_keyboard_settings()
+        self.keyboard_view.set_layout(adapter.layout)
+        self.keyboard_view.set_mappings(self._mappings())
+        self.keyboard_view.clear_travel()
+        self.select_key(adapter.layout.keys[0].key_id)
+        self.keyboard_choice_var.set(self._preferred_label())
+        save_config(self.config_data)
+        self.service.update_config(self.config_data)
+
+    def _keyboard_enabled_changed(self, selection_id: str, variable: tk.BooleanVar) -> None:
+        if not self._store_current_keyboard_settings():
+            variable.set(self.config_data.settings_for(selection_id).controller_enabled)
+            return
+        settings = self.config_data.settings_for(selection_id)
+        settings.controller_enabled = variable.get()
+        settings.sanitize()
+        self.config_data.keyboard_settings[selection_id] = settings
+        self.config_data.keyboard_mappings[selection_id] = settings.mappings
+        save_config(self.config_data)
+        self.service.update_config(self.config_data)
+        self._refresh_device_ui()
+        state = "enabled" if settings.controller_enabled else "disabled"
+        self.set_status(f"Controller mode {state} for {self.config_data.known_keyboards.get(selection_id, selection_id)}")
+
+    def delete_keyboard_data(self, selection_id: str) -> None:
+        label = self.config_data.known_keyboards.get(selection_id, selection_id)
+        if not messagebox.askyesno(
+            "Delete keyboard data?",
+            f"Delete all mappings and response settings saved for {label}?",
+            parent=self,
+        ):
+            return
+        self.config_data.forget_keyboard(selection_id)
+        if self.active_settings_id == selection_id:
+            self.active_adapter_id = self._initial_adapter_id()
+            self.active_settings_id = self._initial_settings_id()
+            self.config_data.apply_settings_for(self.active_settings_id)
+            self._load_current_keyboard_settings()
+            layout = self.registry.default_layout(self.active_adapter_id)
+            self.keyboard_view.set_layout(layout)
+            self.keyboard_view.set_mappings(self._mappings())
+            self.keyboard_view.clear_travel()
+            self.select_key(layout.keys[0].key_id)
+        save_config(self.config_data)
+        self.service.update_config(self.config_data)
+        self.keyboard_choice_var.set(self._preferred_label())
+        self._refresh_device_ui()
+        self.set_status(f"Deleted saved data for {label}")
+
+    def factory_reset(self) -> None:
+        if not messagebox.askyesno(
+            "Factory reset everything?",
+            "This removes every saved keyboard, mapping, response setting, and shortcut. Continue?",
+            parent=self,
+        ):
+            return
+        self.service.stop()
+        self.config_data = MapperConfig().sanitize()
+        self.active_adapter_id = self._initial_adapter_id()
+        self.active_settings_id = self._initial_settings_id()
+        self.config_data.apply_settings_for(self.active_settings_id)
+        layout = self.registry.default_layout(self.active_adapter_id)
+        self.keyboard_view.set_layout(layout)
+        self.keyboard_view.set_mappings(self._mappings())
+        self.keyboard_view.clear_travel()
+        self.select_key(layout.keys[0].key_id)
+        self._load_current_keyboard_settings()
+        self.auto_start_var.set(self.config_data.auto_start)
+        self.start_minimized_var.set(self.config_data.start_minimized)
+        self.start_stop_hotkey_var.set(self.config_data.start_stop_hotkey)
+        self.exit_hotkey_var.set(self.config_data.exit_hotkey)
+        self.keyboard_choice_var.set(self._preferred_label())
+        save_config(self.config_data)
+        self.service.update_config(self.config_data)
+        self._apply_hotkeys()
+        self._refresh_device_ui()
+        self.start_button.configure(state="normal")
+        self.set_status("Factory reset complete")
+
     def _mappings(self) -> dict[str, str]:
         return self.config_data.mappings_for(self.active_settings_id)
 
@@ -390,21 +608,15 @@ class MapperWindow(tk.Tk):
         preferred = self._adapter_labels.get(self.keyboard_choice_var.get(), "auto")
         self.config_data.preferred_keyboard = preferred
         if preferred != "auto":
-            adapter = self.registry.adapter_type(preferred)
-            if adapter:
-                self.active_adapter_id = adapter.adapter_id
-                self.active_settings_id = preferred
-                self.config_data.apply_settings_for(self.active_settings_id)
-                self._load_current_keyboard_settings()
-                self.keyboard_view.set_layout(adapter.layout)
-                self.keyboard_view.set_mappings(self._mappings())
-                self.select_key(adapter.layout.keys[0].key_id)
+            self._select_keyboard_for_editing(preferred)
+            return
         save_config(self.config_data)
         self.service.update_config(self.config_data)
+        self._refresh_device_ui()
         if self.service.running:
-            self.set_status("Switching device adapter...")
+            self.set_status("Showing auto-detected keyboards")
         else:
-            self.set_status("Adapter preference saved")
+            self.set_status("Keyboard preference saved")
 
     def select_key(self, key_id: int) -> None:
         key = self.keyboard_view.layout.by_id.get(key_id)
@@ -607,7 +819,7 @@ class MapperWindow(tk.Tk):
             while True:
                 event = self.service.events.get_nowait()
                 if event.kind == "travel":
-                    latest_travel[(event.keyboard_id, event.physical_index)] = event
+                    latest_travel[(event.device_id or event.keyboard_id, event.physical_index)] = event
                 else:
                     self._handle_service_event(event)
         except queue.Empty:
@@ -628,7 +840,19 @@ class MapperWindow(tk.Tk):
 
         if event.kind in {"detected", "connected"} and event.keyboard_id:
             adapter = self.registry.adapter_type(event.keyboard_id)
-            if adapter:
+            if event.device_id and event.device_name:
+                self.config_data.remember_keyboard(event.device_id, event.device_name)
+                self._connected_selection_ids.add(event.device_id)
+                save_config(self.config_data)
+            should_focus = (
+                adapter is not None
+                and event.device_id is not None
+                and (
+                    self.active_settings_id == event.device_id
+                    or (":" not in self.active_settings_id and self.config_data.preferred_keyboard == "auto")
+                )
+            )
+            if adapter and should_focus:
                 self.active_adapter_id = event.keyboard_id
                 self.active_settings_id = event.device_id or event.keyboard_id
                 self.config_data.apply_settings_for(self.active_settings_id)
@@ -642,6 +866,7 @@ class MapperWindow(tk.Tk):
             self.device_var.set(display_name)
             self.digital_output_supported = bool(event.digital_output_supported)
             self._update_output_capability()
+            self._refresh_device_ui()
 
         if event.kind == "connected":
             self.set_status(event.message)
@@ -650,6 +875,9 @@ class MapperWindow(tk.Tk):
             self.digital_output_supported = bool(event.digital_output_supported)
             self._update_output_capability(event.message)
         elif event.kind in {"error", "disconnected"}:
+            if event.device_id:
+                self._connected_selection_ids.discard(event.device_id)
+                self._refresh_device_ui()
             self.set_status(event.message, error=True)
             self.tray.update(False, "Hall Analog Mapper · disconnected")
             if event.kind == "error":

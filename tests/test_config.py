@@ -29,7 +29,8 @@ class ConfigTests(unittest.TestCase):
 
     def test_missing_file_uses_useful_defaults(self) -> None:
         config = load_config(Path("definitely-not-present.json"))
-        self.assertEqual(config.mappings["9"], "left_stick_up")
+        self.assertEqual(config.mappings, {})
+        self.assertTrue(config.auto_start)
 
     def test_mappings_are_isolated_per_keyboard_adapter(self) -> None:
         config = MapperConfig().sanitize()
@@ -38,6 +39,45 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn("1", config.mappings_for("epomaker_he30"))
         restored = MapperConfig.from_dict(config.to_dict())
         self.assertEqual(restored.mappings_for("example_other_keyboard"), {"1": "button_b"})
+
+    def test_response_settings_are_isolated_per_physical_keyboard(self) -> None:
+        config = MapperConfig().sanitize()
+        config.apply_settings_for("epomaker_he30:first")
+        config.deadzone_raw = 12
+        config.max_raw = 360
+        config.sensitivity = 1.7
+        config.digital_threshold = 0.35
+        config.keyboard_keys_enabled = False
+        config.update_settings_for("epomaker_he30:first")
+
+        config.apply_settings_for("epomaker_he30:second")
+        config.deadzone_raw = 24
+        config.max_raw = 420
+        config.sensitivity = 0.8
+        config.digital_threshold = 0.55
+        config.keyboard_keys_enabled = True
+        config.update_settings_for("epomaker_he30:second")
+
+        restored = MapperConfig.from_dict(config.to_dict())
+        first = restored.settings_for("epomaker_he30:first")
+        second = restored.settings_for("epomaker_he30:second")
+        self.assertEqual((first.deadzone_raw, first.max_raw, first.sensitivity, first.digital_threshold), (12, 360, 1.7, 0.35))
+        self.assertEqual((second.deadzone_raw, second.max_raw, second.sensitivity, second.digital_threshold), (24, 420, 0.8, 0.55))
+        self.assertFalse(first.keyboard_keys_enabled)
+        self.assertTrue(second.keyboard_keys_enabled)
+
+    def test_keyboard_registration_enablement_and_deletion_round_trip(self) -> None:
+        config = MapperConfig().sanitize()
+        config.remember_keyboard("epomaker_he30:first", "EPOMAKER HE30 #FIRST")
+        config.settings_for("epomaker_he30:first").controller_enabled = False
+
+        restored = MapperConfig.from_dict(config.to_dict())
+        self.assertEqual(restored.known_keyboards["epomaker_he30:first"], "EPOMAKER HE30 #FIRST")
+        self.assertFalse(restored.settings_for("epomaker_he30:first").controller_enabled)
+
+        restored.forget_keyboard("epomaker_he30:first")
+        self.assertNotIn("epomaker_he30:first", restored.known_keyboards)
+        self.assertNotIn("epomaker_he30:first", restored.keyboard_settings)
 
     def test_output_policy_preferences_round_trip(self) -> None:
         config = MapperConfig(
